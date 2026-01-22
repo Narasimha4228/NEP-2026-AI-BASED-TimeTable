@@ -1,0 +1,37 @@
+{
+  "data_collection": {
+    "status": "PASSED",
+    "courses_count": 3,
+    "faculty_count": 8,
+    "groups_count": 0,
+    "rooms_count": 8,
+    "validation_passed": false,
+    "summary": {
+      "total_courses": 3,
+      "total_faculty": 8,
+      "total_student_groups": 0,
+      "total_rooms": 8,
+      "total_time_slots": 5,
+      "working_days": 5
+    }
+  },
+  "genetic_components": {
+    "status": "FAILED",
+    "error": "'working_days'"
+  },
+  "complete_generation": {
+    "status": "PASSED",
+    "generation_time_seconds": 0.560894,
+    "best_fitness": 1000,
+    "generations_completed": null,
+    "timetable_entries_count": 0,
+    "sample_entry": null
+  },
+  "overall": {
+    "status": "FAILED",
+    "data_collection": "PASSED",
+    "genetic_components": "FAILED",
+    "complete_generation": "PASSED",
+    "test_timestamp": "2026-01-21T19:34:33.877620"
+  }
+}

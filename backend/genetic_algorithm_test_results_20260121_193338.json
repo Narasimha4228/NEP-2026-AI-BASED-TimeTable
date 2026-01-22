@@ -1,0 +1,25 @@
+{
+  "data_collection": {
+    "status": "FAILED",
+    "error": "TimetableDataCollector.collect_student_groups() missing 1 required positional argument: 'academic_year'"
+  },
+  "genetic_components": {
+    "status": "FAILED",
+    "error": "'working_days'"
+  },
+  "complete_generation": {
+    "status": "PASSED",
+    "generation_time_seconds": 0.322236,
+    "best_fitness": 1000,
+    "generations_completed": null,
+    "timetable_entries_count": 0,
+    "sample_entry": null
+  },
+  "overall": {
+    "status": "FAILED",
+    "data_collection": "FAILED",
+    "genetic_components": "FAILED",
+    "complete_generation": "PASSED",
+    "test_timestamp": "2026-01-21T19:33:38.161046"
+  }
+}

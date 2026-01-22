@@ -1,0 +1,21 @@
+{
+  "data_collection": {
+    "status": "FAILED",
+    "error": "'TimetableDataCollector' object has no attribute 'collect_student_groups'"
+  },
+  "genetic_components": {
+    "status": "FAILED",
+    "error": "'working_days'"
+  },
+  "complete_generation": {
+    "status": "FAILED",
+    "error": "'TimetableDataCollector' object has no attribute 'collect_student_groups'"
+  },
+  "overall": {
+    "status": "FAILED",
+    "data_collection": "FAILED",
+    "genetic_components": "FAILED",
+    "complete_generation": "FAILED",
+    "test_timestamp": "2026-01-21T19:25:47.242624"
+  }
+}
