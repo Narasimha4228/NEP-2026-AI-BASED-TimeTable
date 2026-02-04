@@ -14,10 +14,11 @@ class TimetableEntry(BaseModel):
 
 
 class TimetableBase(BaseModel):
-    title: str
+    title: Optional[str] = None
     program_id: str
+    department_code: Optional[str] = None  # Store department code for direct filtering
     semester: int
-    academic_year: str
+    academic_year: Optional[str] = None
     entries: List[TimetableEntry] = []
     is_draft: bool = True
 
@@ -34,3 +35,11 @@ class Timetable(TimetableBase, MongoBaseModel):
     faculty_ids: List[str] = []
     group_ids: List[str] = []
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = None
+    group_id: Optional[str] = None
+    validation_status: Optional[str] = None
+    generated_at: Optional[datetime] = None
+    generation_method: Optional[str] = None
+    metadata: Optional[dict] = None
+    optimization_score: Optional[int] = None
+    department_code: Optional[str] = None  # Department code for filtering

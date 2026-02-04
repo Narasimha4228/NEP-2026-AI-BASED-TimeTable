@@ -1,0 +1,4 @@
+[
+  { "id": "g1", "name": "BSc CS Year1 - A", "size": 60, "course_ids": ["c1", "c2"] },
+  { "id": "g2", "name": "BSc Math Year1 - A", "size": 40, "course_ids": ["c3"] }
+]

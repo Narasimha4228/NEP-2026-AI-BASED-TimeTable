@@ -22,10 +22,11 @@ import {
   Warning,
 } from '@mui/icons-material';
 import timetableService from '../../services/timetableService';
+import { useAuthStore } from '../../store/authStore';
 
 interface DashboardStat {
   title: string;
-  value: number;
+  value: number | string;
   icon: React.ReactElement;
   color: string;
   change: string;
@@ -35,6 +36,7 @@ const Dashboard: React.FC = () => {
   const [stats, setStats] = useState<DashboardStat[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useAuthStore();
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -42,53 +44,171 @@ const Dashboard: React.FC = () => {
         setLoading(true);
         setError(null);
 
-        // Fetch data from all APIs
-        const [programs, courses, faculty, rooms, timetables] = await Promise.all([
-          timetableService.getPrograms(),
-          timetableService.getCourses(),
-          timetableService.getFaculty(),
-          timetableService.getRooms(),
-          timetableService.getAllTimetables(),
-        ]);
+        let statsData: DashboardStat[] = [];
 
-        // Calculate stats
-        const statsData = [
-          {
-            title: 'Active Timetables',
-            value: timetables.length,
-            icon: <Schedule />,
-            color: '#1976d2',
-            change: `${timetables.length > 0 ? 'Active' : 'No active timetables'}`,
-          },
-          {
-            title: 'Programs',
-            value: programs.length,
-            icon: <School />,
-            color: '#2e7d32',
-            change: `${programs.length} total programs`,
-          },
-          {
-            title: 'Courses',
-            value: courses.length,
-            icon: <Assignment />,
-            color: '#ed6c02',
-            change: `${courses.length} courses available`,
-          },
-          {
-            title: 'Faculty',
-            value: faculty.length,
-            icon: <Psychology />,
-            color: '#9c27b0',
-            change: `${faculty.length} faculty members`,
-          },
-          {
-            title: 'Rooms',
-            value: rooms.length,
-            icon: <CheckCircle />,
-            color: '#0288d1',
-            change: `${rooms.length} rooms available`,
-          },
-        ];
+        // Check user role
+        if (user?.role === 'faculty') {
+          // Fetch faculty-specific dashboard
+          try {
+            const facultyDash = await timetableService.getFacultyDashboard();
+            
+            statsData = [
+              {
+                title: 'Total Classes',
+                value: facultyDash.total_classes || 0,
+                icon: <Schedule />,
+                color: '#1976d2',
+                change: 'Teaching assignments',
+              },
+              {
+                title: "Today's Classes",
+                value: facultyDash.today_classes || 0,
+                icon: <Psychology />,
+                color: '#2e7d32',
+                change: facultyDash.today || 'Not available',
+              },
+              {
+                title: 'Weekly Hours',
+                value: facultyDash.weekly_hours || 0,
+                icon: <Assignment />,
+                color: '#ed6c02',
+                change: 'teaching hours',
+              },
+              {
+                title: 'Faculty Name',
+                value: facultyDash.faculty_name || 'N/A',
+                icon: <CheckCircle />,
+                color: '#9c27b0',
+                change: 'Current user',
+              },
+            ];
+          } catch (err) {
+            console.error('Error fetching faculty dashboard:', err);
+            // Fallback to general data
+            const [programs, courses, faculty, rooms, timetables] = await Promise.all([
+              timetableService.getPrograms(),
+              timetableService.getCourses(),
+              timetableService.getFaculty(),
+              timetableService.getRooms(),
+              timetableService.getAllTimetables(),
+            ]);
+
+            statsData = [
+              {
+                title: 'Active Timetables',
+                value: timetables.length,
+                icon: <Schedule />,
+                color: '#1976d2',
+                change: `${timetables.length > 0 ? 'Active' : 'No active timetables'}`,
+              },
+              {
+                title: 'Programs',
+                value: programs.length,
+                icon: <School />,
+                color: '#2e7d32',
+                change: `${programs.length} total programs`,
+              },
+              {
+                title: 'Courses',
+                value: courses.length,
+                icon: <Assignment />,
+                color: '#ed6c02',
+                change: `${courses.length} courses available`,
+              },
+              {
+                title: 'Faculty',
+                value: faculty.length,
+                icon: <Psychology />,
+                color: '#9c27b0',
+                change: `${faculty.length} faculty members`,
+              },
+              {
+                title: 'Rooms',
+                value: rooms.length,
+                icon: <CheckCircle />,
+                color: '#0288d1',
+                change: `${rooms.length} rooms available`,
+              },
+            ];
+          }
+        } else if (user?.role === 'student') {
+          // Fetch student-specific data
+          const [timetables, courses] = await Promise.all([
+            timetableService.getAllTimetables(),
+            timetableService.getCourses(),
+          ]);
+
+          statsData = [
+            {
+              title: 'My Classes',
+              value: timetables.length,
+              icon: <Schedule />,
+              color: '#1976d2',
+              change: 'Enrolled courses',
+            },
+            {
+              title: 'Total Courses',
+              value: courses.length,
+              icon: <School />,
+              color: '#2e7d32',
+              change: 'Available courses',
+            },
+            {
+              title: 'Status',
+              value: 'Active',
+              icon: <CheckCircle />,
+              color: '#0288d1',
+              change: 'Current semester',
+            },
+          ];
+        } else {
+          // Admin/Default view
+          const [programs, courses, faculty, rooms, timetables] = await Promise.all([
+            timetableService.getPrograms(),
+            timetableService.getCourses(),
+            timetableService.getFaculty(),
+            timetableService.getRooms(),
+            timetableService.getAllTimetables(),
+          ]);
+
+          statsData = [
+            {
+              title: 'Active Timetables',
+              value: timetables.length,
+              icon: <Schedule />,
+              color: '#1976d2',
+              change: `${timetables.length > 0 ? 'Active' : 'No active timetables'}`,
+            },
+            {
+              title: 'Programs',
+              value: programs.length,
+              icon: <School />,
+              color: '#2e7d32',
+              change: `${programs.length} total programs`,
+            },
+            {
+              title: 'Courses',
+              value: courses.length,
+              icon: <Assignment />,
+              color: '#ed6c02',
+              change: `${courses.length} courses available`,
+            },
+            {
+              title: 'Faculty',
+              value: faculty.length,
+              icon: <Psychology />,
+              color: '#9c27b0',
+              change: `${faculty.length} faculty members`,
+            },
+            {
+              title: 'Rooms',
+              value: rooms.length,
+              icon: <CheckCircle />,
+              color: '#0288d1',
+              change: `${rooms.length} rooms available`,
+            },
+          ];
+        }
 
         setStats(statsData);
       } catch (err) {
@@ -100,7 +220,7 @@ const Dashboard: React.FC = () => {
     };
 
     fetchDashboardData();
-  }, []);
+  }, [user?.role]);
 
   const recentActivity = [
     {

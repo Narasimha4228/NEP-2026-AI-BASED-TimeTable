@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Box,
   Typography,
@@ -11,8 +12,11 @@ import {
   Select,
   MenuItem,
   Button,
+  CircularProgress,
+  Alert,
 } from "@mui/material";
 import timetableService from "../../services/timetableService";
+import { useAuthStore } from "../../store/authStore";
 
 interface User {
   id: string;
@@ -24,15 +28,42 @@ interface User {
 const AdminUsers: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const navigate = useNavigate();
+  const { logout } = useAuthStore();
 
   // ✅ Load users correctly
   const fetchUsers = async () => {
     try {
+      setLoading(true);
+      setError(null);
+      console.log("📥 Fetching users...");
       const data = await timetableService.listUsers();
       console.log("👥 Users loaded:", data);
       setUsers(data);
-    } catch (err) {
-      console.error("Failed to load users", err);
+      if (data.length === 0) {
+        setError("No users found");
+      }
+    } catch (err: any) {
+      console.error("❌ Failed to load users:", err);
+      
+      // Check if it's a 401 Unauthorized error
+      if (err.response?.status === 401) {
+        console.error("🔑 Token expired or invalid, logging out...");
+        logout();
+        navigate("/login");
+        return;
+      }
+      
+      const errorMsg = err.response?.data?.detail || err.response?.statusText || err.message || "Unknown error";
+      const fullError = `Failed to load users: ${errorMsg} (${err.response?.status || "Network Error"})`;
+      console.error("📋 Full error:", fullError);
+      setError(fullError);
+      setUsers([]);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -74,56 +105,77 @@ const AdminUsers: React.FC = () => {
         Access Management
       </Typography>
 
-      <TextField
-        label="Search by name or email"
-        fullWidth
-        sx={{ mb: 2 }}
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
+      {loading && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
+          <CircularProgress />
+          <Typography sx={{ ml: 2 }}>Loading users...</Typography>
+        </Box>
+      )}
 
-      <Table>
-        <TableHead>
-          <TableRow>
-            <TableCell>Name</TableCell>
-            <TableCell>Email</TableCell>
-            <TableCell>Role</TableCell>
-            <TableCell>Action</TableCell>
-          </TableRow>
-        </TableHead>
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
 
-        <TableBody>
-          {filteredUsers.map((user) => (
-            <TableRow key={user.id}>
-              <TableCell>{user.full_name}</TableCell>
-              <TableCell>{user.email}</TableCell>
+      {!loading && !error && (
+        <>
+          <TextField
+            label="Search by name or email"
+            fullWidth
+            sx={{ mb: 2 }}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
 
-              <TableCell>
-                <Select
-                  value={user.role}
-                  size="small"
-                  onChange={(e) =>
-                    handleRoleChange(
-                      user.id,
-                      e.target.value as "admin" | "faculty" | "student"
-                    )
-                  }
-                >
-                  <MenuItem value="student">Student</MenuItem>
-                  <MenuItem value="faculty">Faculty</MenuItem>
-                  <MenuItem value="admin">Admin</MenuItem>
-                </Select>
-              </TableCell>
+          {users.length === 0 ? (
+            <Alert severity="info">No users available</Alert>
+          ) : (
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Name</TableCell>
+                  <TableCell>Email</TableCell>
+                  <TableCell>Role</TableCell>
+                  <TableCell>Action</TableCell>
+                </TableRow>
+              </TableHead>
 
-              <TableCell>
-                <Button size="small" variant="outlined">
-                  Update
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+              <TableBody>
+                {filteredUsers.map((user) => (
+                  <TableRow key={user.id}>
+                    <TableCell>{user.full_name}</TableCell>
+                    <TableCell>{user.email}</TableCell>
+
+                    <TableCell>
+                      <Select
+                        value={user.role}
+                        size="small"
+                        onChange={(e) =>
+                          handleRoleChange(
+                            user.id,
+                            e.target.value as "admin" | "faculty" | "student"
+                          )
+                        }
+                      >
+                        <MenuItem value="student">Student</MenuItem>
+                        <MenuItem value="faculty">Faculty</MenuItem>
+                        <MenuItem value="admin">Admin</MenuItem>
+                      </Select>
+                    </TableCell>
+
+                    <TableCell>
+                      <Button size="small" variant="outlined">
+                        Update
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </>
+      )}
     </Box>
   );
 };

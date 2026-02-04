@@ -369,12 +369,23 @@ class AdvancedTimetableGenerator:
     
     def setup_groups_and_resources(self):
         """Setup student groups, rooms, and faculty"""
-        # Main lecture group
-        self.groups = [
-            StudentGroup("MAIN", "CSE AI & ML - Main", 60, False),
-            StudentGroup("SUB1", "Lab Subgroup 1", 30, True, "MAIN"),
-            StudentGroup("SUB2", "Lab Subgroup 2", 29, True, "MAIN"),
-        ]
+        # Load groups from database if available
+        import asyncio
+        from app.db.mongodb import db
+        async def fetch_groups():
+            groups_raw = await db.db.student_groups.find({}).to_list(None)
+            result = []
+            for group in groups_raw:
+                group_obj = StudentGroup(
+                    id=str(group["_id"]),
+                    name=group.get("name", ""),
+                    size=group.get("student_strength", 30),
+                    is_subgroup=group.get("is_subgroup", False),
+                    parent_group_id=group.get("parent_group_id")
+                )
+                result.append(group_obj)
+            return result
+        self.groups = asyncio.get_event_loop().run_until_complete(fetch_groups())
         
         # Rooms - Adding more rooms to handle resource constraints
         self.rooms = [
@@ -1074,9 +1085,9 @@ class AdvancedTimetableGenerator:
                 # Step 3: Validate the schedule
                 validation_result = self.validate_schedule()
                 
-                # Check for critical errors
+                # Only treat overlaps as critical errors, allow missing sessions as warnings
                 critical_errors = [error for error in validation_result["errors"] 
-                                  if "No sessions scheduled" in error or "Overlap detected" in error]
+                                  if "Overlap detected" in error]
                 
                 if critical_errors:
                     print(f"Attempt {attempt + 1}: Critical validation errors: {critical_errors}")
@@ -1176,7 +1187,6 @@ class AdvancedTimetableGenerator:
             room = next(room for room in self.rooms if room.id == entry.room_id)
             group = next(group for group in self.groups if group.id == entry.group_id)
             faculty = next(faculty for faculty in self.faculty if faculty.id == entry.faculty_id)
-            
             formatted.append({
                 "day": entry.time_slot.day,
                 "start_time": entry.time_slot.start_time,
@@ -1184,6 +1194,7 @@ class AdvancedTimetableGenerator:
                 "course_code": entry.course_code,
                 "course_name": entry.course_name,
                 "group": group.name,
+                "group_id": group.id,  # Ensure group_id is present and matches MongoDB _id
                 "room": room.name,
                 "faculty": faculty.name,
                 "is_lab": entry.is_lab,

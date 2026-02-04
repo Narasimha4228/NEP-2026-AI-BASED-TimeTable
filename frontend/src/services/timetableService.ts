@@ -1,6 +1,8 @@
 import axios from "axios";
 
 const API_BASE_URL = "http://localhost:8000/api/v1";
+// ⚠️ change port/path if your backend is different
+
 
 export interface Program {
   id: string;
@@ -113,17 +115,52 @@ class TimetableService {
     // 🔐 Attach JWT token to every request
     this.api.interceptors.request.use((config) => {
       const authStorage = localStorage.getItem("auth-storage");
+      console.log("🔐 TimetableService interceptor - authStorage exists:", !!authStorage);
+      
       if (authStorage) {
-        const parsed = JSON.parse(authStorage);
-        const token = parsed?.state?.token;
-        const isAuthenticated = parsed?.state?.isAuthenticated;
+        try {
+          const parsed = JSON.parse(authStorage);
+          const token = parsed?.state?.token;
+          const isAuthenticated = parsed?.state?.isAuthenticated;
 
-        if (token && isAuthenticated) {
-          config.headers.Authorization = `Bearer ${token}`;
+          console.log("🔐 TimetableService interceptor - Parsed auth:", {
+            hasToken: !!token,
+            tokenPreview: token ? `${token.substring(0, 30)}...` : "None",
+            isAuthenticated,
+          });
+
+          if (token && isAuthenticated) {
+            config.headers.Authorization = `Bearer ${token}`;
+            console.log("✅ TimetableService - Authorization header added");
+          } else {
+            console.warn("⚠️ TimetableService - Token missing or not authenticated", {
+              token: !!token,
+              isAuthenticated,
+            });
+          }
+        } catch (err) {
+          console.error("❌ TimetableService - Failed to parse authStorage:", err);
         }
+      } else {
+        console.warn("⚠️ TimetableService - No auth-storage in localStorage");
       }
+      
       return config;
     });
+
+    // Error interceptor for debugging
+    this.api.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        console.error("🚨 TimetableService axios error:", {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          message: error.message,
+          url: error.config?.url,
+        });
+        return Promise.reject(error);
+      }
+    );
   }
 
   // ===============================
@@ -132,19 +169,29 @@ class TimetableService {
 
   /** Get all users (Admin only) */
   async listUsers(): Promise<any[]> {
-    const response = await this.api.get("/users");
+    try {
+      const response = await this.api.get("/users");
 
-    console.log("📦 Raw users from backend:", response.data);
+      console.log("📦 Raw users from backend:", response.data);
 
-    const mapped = (response.data || []).map((u: any) => ({
-      id: u._id, // ✅ MongoDB ObjectId mapped correctly
-      email: u.email,
-      full_name: u.full_name,
-      role: u.role,
-    }));
+      const mapped = (response.data || []).map((u: any) => ({
+        id: u._id || u.id, // ✅ MongoDB ObjectId mapped correctly
+        email: u.email,
+        full_name: u.full_name,
+        role: u.role,
+      }));
 
-    console.log("✅ Mapped users:", mapped);
-    return mapped;
+      console.log("✅ Mapped users:", mapped);
+      return mapped;
+    } catch (err: any) {
+      console.error("❌ ListUsers error:", {
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        data: err.response?.data,
+        message: err.message,
+      });
+      throw err;
+    }
   }
 
   /** Update user role (Admin only) */
@@ -250,17 +297,135 @@ class TimetableService {
 
   /** Get all timetables */
   async getAllTimetables(): Promise<Timetable[]> {
-    const response = await this.api.get("/timetable/");
+    try {
+      console.log("📥 Fetching timetables from:", `${this.api.defaults.baseURL}/timetable/`);
+      const response = await this.api.get("/timetable/");
 
-    console.log("📦 Raw timetables from backend:", response.data);
+      console.log("📦 Raw timetables from backend:", response.data);
 
-    const mapped = (response.data || []).map((t: any) => ({
-      id: t.id || t._id || (t._id ? String(t._id) : undefined),
-      ...t,
-    })) as Timetable[];
+      const raw = response.data;
 
-    console.log("✅ Mapped timetables:", mapped);
-    return mapped;
+      // If backend returned a single generated timetable object (with `schedule`),
+      // normalize to an array containing that single timetable so callers always get an array.
+      if (raw && !Array.isArray(raw) && (raw.schedule || raw.timetable || raw.entries)) {
+        const single = {
+          id: raw.id || raw._id || 'single',
+          // keep original keys so frontend can inspect `schedule`/`entries`
+          ...raw,
+        } as Timetable;
+        console.log('ℹ️ Normalized single timetable response to array');
+        return [single];
+      }
+
+      const mapped = (raw || []).map((t: any) => ({
+        id: t.id || t._id || (t._id ? String(t._id) : undefined),
+        ...t,
+      })) as Timetable[];
+
+      console.log("✅ Mapped timetables:", mapped.length);
+      return mapped;
+    } catch (error: any) {
+      console.error("❌ getAllTimetables error:", {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        request: {
+          method: error.config?.method,
+          url: error.config?.url,
+          headers: error.config?.headers,
+        }
+      });
+      throw error;
+    }
+  }
+
+  /** Get student's personal timetable */
+  async getMyTimetable(): Promise<any> {
+    try {
+      console.log("📥 Fetching my timetable from:", `${this.api.defaults.baseURL}/timetable/my`);
+      const response = await this.api.get("/timetable/my");
+      
+      console.log("📦 My timetable response:", response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error("❌ getMyTimetable error:", {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+      });
+      throw error;
+    }
+  }
+
+  /** Get available filter options for timetable selection */
+  async getFilterOptions(): Promise<any> {
+    try {
+      console.log("📥 Fetching filter options from:", `${this.api.defaults.baseURL}/timetable/options/filters`);
+      const response = await this.api.get("/timetable/options/filters");
+      
+      console.log("📦 Filter options response:", response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error("❌ getFilterOptions error:", {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+      });
+      throw error;
+    }
+  }
+
+  /** Get a specific timetable by ID with full details including entries */
+  async getTimetableById(timetableId: string): Promise<any> {
+    try {
+      console.log("📥 Fetching timetable by ID from:", `${this.api.defaults.baseURL}/timetable/public/${timetableId}`);
+      const response = await this.api.get(`/timetable/public/${timetableId}`);
+      
+      console.log("📦 Timetable response:", response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error("❌ getTimetableById error:", {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        timetableId,
+      });
+      throw error;
+    }
+  }
+
+  /** Filter timetables by department, year, semester, section */
+  async filterTimetables(filters: { department_code?: string; program_id?: string; year?: number; semester?: string; section?: string }): Promise<any> {
+    try {
+      const params = new URLSearchParams();
+      if (filters.department_code) params.append('department_code', filters.department_code);
+      if (filters.program_id) params.append('program_id', filters.program_id);
+      if (filters.year !== undefined && filters.year !== null) params.append('year', String(filters.year));
+      if (filters.semester) params.append('semester', filters.semester);
+      if (filters.section) params.append('section', filters.section);
+      
+      const queryString = params.toString();
+      const url = `/timetable/filter${queryString ? '?' + queryString : ''}`;
+      
+      console.log("📥 Fetching filtered timetable from:", `${this.api.defaults.baseURL}${url}`);
+      const response = await this.api.get(url);
+      
+      console.log("📦 Filtered timetable response:", response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error("❌ filterTimetables error:", {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        filters,
+      });
+      throw error;
+    }
   }
 
   /** Delete timetable */
@@ -270,6 +435,31 @@ class TimetableService {
     const response = await this.api.delete(`/timetable/${timetableId}`);
     console.log("🗑️ Timetable deleted:", response.data);
     return response.data;
+  }
+
+  /** List all published timetables */
+  async listAllTimetables(department_code?: string): Promise<any> {
+    try {
+      const params = new URLSearchParams();
+      if (department_code) params.append('department_code', department_code);
+      
+      const queryString = params.toString();
+      const url = `/timetable/list/all${queryString ? '?' + queryString : ''}`;
+      
+      console.log("📥 Fetching all timetables from:", `${this.api.defaults.baseURL}${url}`);
+      const response = await this.api.get(url);
+      
+      console.log("📦 All timetables response:", response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error("❌ listAllTimetables error:", {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+      });
+      throw error;
+    }
   }
 
   // ===============================
@@ -522,6 +712,18 @@ class TimetableService {
     const response = await this.api.post('/timetable/draft', draftData);
     console.log('✅ Draft saved:', response.data);
     return response.data;
+  }
+
+  /** Get faculty dashboard */
+  async getFacultyDashboard(): Promise<any> {
+    try {
+      const response = await this.api.get('/faculty/dashboard/faculty');
+      console.log('👨‍🏫 Faculty dashboard:', response.data);
+      return response.data;
+    } catch (err) {
+      console.error('❌ Error fetching faculty dashboard:', err);
+      throw err;
+    }
   }
 }
 

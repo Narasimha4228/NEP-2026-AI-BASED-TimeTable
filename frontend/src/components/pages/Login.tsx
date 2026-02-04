@@ -32,8 +32,15 @@ const LoginPage: React.FC = () => {
     try {
       const success = await login(email, password);
       if (success) {
-        console.log('✅ Login successful, redirecting to dashboard...');
-        navigate('/'); // Redirect to dashboard after successful login
+        console.log('✅ Login successful, redirecting...');
+        // Read role from the auth store and redirect students to their timetable
+        const currentUser = useAuthStore.getState().user;
+        const role = (currentUser?.role ?? '').toString().toLowerCase();
+        if (role === 'student') {
+          navigate('/my-timetable');
+        } else {
+          navigate('/'); // Admins and faculty -> dashboard
+        }
       } else {
         setError('Invalid email or password');
       }

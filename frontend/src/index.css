@@ -3,9 +3,8 @@
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  /* color-scheme and background are controlled by MUI theme */
+  color: inherit;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;

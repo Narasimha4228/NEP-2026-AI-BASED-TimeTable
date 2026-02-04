@@ -139,13 +139,30 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    user = await db.db.users.find_one({"_id": ObjectId(user_id)})
-    if not user:
-        raise credentials_exception
+    try:
+        user = await db.db.users.find_one({"_id": ObjectId(user_id)})
+        if not user:
+            raise credentials_exception
 
-    user["id"] = str(user["_id"])
-    user.pop("_id", None)
-    return User(**user)
+        # Convert the document to User model
+        user["id"] = str(user["_id"])
+        user.pop("_id", None)
+        
+        # Convert ObjectId fields to strings
+        if "faculty_id" in user and user["faculty_id"]:
+            user["faculty_id"] = str(user["faculty_id"]) if not isinstance(user["faculty_id"], str) else user["faculty_id"]
+        if "group_id" in user and user["group_id"]:
+            user["group_id"] = str(user["group_id"]) if not isinstance(user["group_id"], str) else user["group_id"]
+        
+        # Remove hashed_password from user data
+        user_data = {k: v for k, v in user.items() if k != "hashed_password"}
+        
+        return User(**user_data)
+    except Exception as e:
+        import traceback
+        print(f"❌ Error: {e}")
+        traceback.print_exc()
+        raise credentials_exception
 
 # -----------------------------
 # ACTIVE USER

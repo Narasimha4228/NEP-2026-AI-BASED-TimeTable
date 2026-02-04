@@ -1,5 +1,7 @@
 import { BrowserRouter as Router } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { useMemo } from 'react';
+import { useThemeStore } from './store/themeStore';
 import { CssBaseline, Box } from '@mui/material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -8,31 +10,37 @@ import MainLayout from './components/layout/MainLayout';
 import { AuthGuard } from './components/AuthGuard';
 import './App.css';
 
-// Create a custom off-white theme with faded deep blue accents
-const theme = createTheme({
-  palette: {
-    mode: 'dark',
-    primary: {
-      main: '#2196f3',
-      light: '#64b5f6',
-      dark: '#1976d2',
-    },
-    secondary: {
-      main: '#f50057',
-    },
-    background: {
-      default: '#121212',
-      paper: '#1e1e1e',
-    },
-    text: {
-      primary: '#ffffff',
-      secondary: 'rgba(255, 255, 255, 0.7)',
-    },
-    divider: 'rgba(255, 255, 255, 0.12)',
-    action: {
-      hover: 'rgba(33, 150, 243, 0.08)',
-    }
-  },
+function App() {
+  const mode = useThemeStore((s) => s.mode);
+
+  // Create a custom theme that responds to the persisted mode
+  const theme = useMemo(() => createTheme({
+    palette: (() => {
+      const primary = { main: '#2196f3', light: '#64b5f6', dark: '#1976d2' };
+      const secondary = { main: '#f50057' };
+      if (mode === 'dark') {
+        return {
+          mode,
+          primary,
+          secondary,
+          background: { default: '#121212', paper: '#1e1e1e' },
+          text: { primary: '#ffffff', secondary: 'rgba(255, 255, 255, 0.7)' },
+          divider: 'rgba(255, 255, 255, 0.12)',
+          action: { hover: 'rgba(33, 150, 243, 0.08)' },
+        };
+      }
+
+      // light mode
+      return {
+        mode,
+        primary,
+        secondary,
+        background: { default: '#ffffff', paper: '#f6f6f6' },
+        text: { primary: '#0f1724', secondary: 'rgba(15, 23, 36, 0.7)' },
+        divider: 'rgba(15, 23, 36, 0.12)',
+        action: { hover: 'rgba(33, 150, 243, 0.06)' },
+      };
+    })(),
   typography: {
     fontSize: 12, // Smaller base font size
     h1: { fontSize: '1.75rem' },
@@ -197,38 +205,40 @@ const theme = createTheme({
     },
     MuiCard: {
       styleOverrides: {
-        root: {
-          background: 'linear-gradient(135deg, rgba(30,30,30,0.95) 0%, rgba(18,18,18,0.95) 100%)',
-          border: '1px solid rgba(33, 150, 243, 0.3)',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-        },
+        root: ({ theme }: any) => ({
+          background: theme.palette.mode === 'dark'
+            ? 'linear-gradient(135deg, rgba(30,30,30,0.95) 0%, rgba(18,18,18,0.95) 100%)'
+            : theme.palette.background.paper,
+          border: `1px solid ${theme.palette.divider}`,
+          boxShadow: theme.palette.mode === 'dark' ? '0 4px 20px rgba(0,0,0,0.3)' : '0 4px 12px rgba(16,24,40,0.06)',
+        }),
       },
     },
     MuiPaper: {
       styleOverrides: {
-        root: {
+        root: ({ theme }: any) => ({
           backgroundImage: 'none',
-          background: 'linear-gradient(135deg, rgba(30,30,30,0.95) 0%, rgba(18,18,18,0.95) 100%)',
-          border: '1px solid rgba(33, 150, 243, 0.3)',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-        },
+          background: theme.palette.mode === 'dark' ? 'linear-gradient(135deg, rgba(30,30,30,0.95) 0%, rgba(18,18,18,0.95) 100%)' : theme.palette.background.paper,
+          border: `1px solid ${theme.palette.divider}`,
+          boxShadow: theme.palette.mode === 'dark' ? '0 4px 20px rgba(0,0,0,0.3)' : '0 4px 12px rgba(16,24,40,0.06)',
+        }),
       },
     },
     MuiDrawer: {
       styleOverrides: {
-        paper: {
-          background: 'linear-gradient(135deg, rgba(26,26,26,0.95) 0%, rgba(18,18,18,0.95) 100%)',
-          borderRight: '1px solid rgba(33, 150, 243, 0.3)',
-        },
+        paper: ({ theme }: any) => ({
+          background: theme.palette.mode === 'dark' ? 'linear-gradient(135deg, rgba(26,26,26,0.95) 0%, rgba(18,18,18,0.95) 100%)' : theme.palette.background.paper,
+          borderRight: `1px solid ${theme.palette.divider}`,
+        }),
       },
     },
     MuiAppBar: {
       styleOverrides: {
-        root: {
-          background: 'linear-gradient(135deg, rgba(30,30,30,0.95) 0%, rgba(18,18,18,0.95) 100%)',
-          borderBottom: '1px solid rgba(33, 150, 243, 0.3)',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-        },
+        root: ({ theme }: any) => ({
+          background: theme.palette.mode === 'dark' ? 'linear-gradient(135deg, rgba(30,30,30,0.95) 0%, rgba(18,18,18,0.95) 100%)' : theme.palette.background.paper,
+          borderBottom: `1px solid ${theme.palette.divider}`,
+          boxShadow: theme.palette.mode === 'dark' ? '0 4px 20px rgba(0,0,0,0.3)' : '0 2px 8px rgba(16,24,40,0.04)',
+        }),
       },
     },
     MuiToolbar: {
@@ -282,8 +292,8 @@ const theme = createTheme({
         },
       },
     },
-  },
-});
+    },
+  }), [mode]);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -294,7 +304,6 @@ const queryClient = new QueryClient({
   },
 });
 
-function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider theme={theme}>

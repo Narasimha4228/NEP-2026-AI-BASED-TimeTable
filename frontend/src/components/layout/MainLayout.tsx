@@ -1,6 +1,7 @@
 import FacultyTimetable from '../pages/FacultyTimetable';
 import StudentTimetable from '../pages/StudentTimetable';
 import AdminUsers from '../pages/AdminUsers';
+import DebugAuth from '../pages/DebugAuth';
 import React, { useState } from 'react';
 import {
   AppBar,
@@ -32,10 +33,13 @@ import {
   ExitToApp,
   ArrowBack as ArrowBackIcon,
   CalendarMonth as CalendarIcon,
+  Brightness4 as Brightness4Icon,
+  Brightness7 as Brightness7Icon,
 } from '@mui/icons-material';
 import { useNavigate, Routes, Route, useLocation } from 'react-router-dom';
 import Dashboard from '../pages/Dashboard.tsx';
 import Timetables from '../pages/Timetables.tsx';
+import { useThemeStore } from '../../store/themeStore';
 import Programs from '../pages/Programs.tsx';
 import Constraints from '../pages/Constraints.tsx';
 import AIOptimization from '../pages/AIOptimization.tsx';
@@ -43,6 +47,7 @@ import CreateTimetable from '../pages/CreateTimetable.tsx';
 import LoginPage from '../pages/Login.tsx';
 import Signup from '../pages/Signup.tsx';
 import { useAuthStore } from '../../store/authStore';
+import Profile from '../pages/Profile';
 
 const drawerWidth = 240;
 
@@ -86,6 +91,10 @@ const MainLayout: React.FC = () => {
     handleMenuClose();
     navigate('/login');
   };
+
+  // Theme
+  const themeMode = useThemeStore((s) => s.mode);
+  const toggleTheme = useThemeStore((s) => s.toggle);
 
   // If not authenticated, show login/signup routes
   if (!isAuthenticated) {
@@ -252,11 +261,15 @@ const MainLayout: React.FC = () => {
             }}>
               <Routes>
   {/* COMMON */}
+  <Route path="/debug-auth" element={<DebugAuth />} />
+  
   <Route path="/my-timetable" element={
     isFaculty ? <FacultyTimetable /> :
     isStudent ? <StudentTimetable /> :
     <Dashboard />
   } />
+
+  <Route path="/profile" element={<Profile />} />
 
   {/* ADMIN & FACULTY ROUTES */}
   <Route path="/" element={
@@ -379,12 +392,18 @@ const MainLayout: React.FC = () => {
           horizontal: 'right',
         }}
       >
-        <MenuItem onClick={handleMenuClose}>
-          <ListItemIcon>
-            <AccountCircle fontSize="small" />
-          </ListItemIcon>
-          <ListItemText primary="Profile" />
-        </MenuItem>
+          <MenuItem onClick={() => { handleMenuClose(); navigate('/profile'); }}>
+            <ListItemIcon>
+              <AccountCircle fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Profile" />
+          </MenuItem>
+          <MenuItem onClick={() => { toggleTheme(); }}>
+            <ListItemIcon>
+              {themeMode === 'dark' ? <Brightness7Icon fontSize="small" /> : <Brightness4Icon fontSize="small" />}
+            </ListItemIcon>
+            <ListItemText primary={themeMode === 'dark' ? 'Switch to Light' : 'Switch to Dark'} />
+          </MenuItem>
         <Divider />
         <MenuItem onClick={handleLogout}>
           <ListItemIcon>

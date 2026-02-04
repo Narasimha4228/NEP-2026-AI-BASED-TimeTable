@@ -255,3 +255,83 @@ async def delete_faculty(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete faculty: {str(e)}"
         )
+
+# =====================================================
+# FACULTY DASHBOARD
+# =====================================================
+@router.get("/dashboard/faculty")
+async def faculty_dashboard(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Faculty dashboard endpoint.
+    Returns faculty's timetable summary including:
+    - Total classes assigned
+    - Classes for today
+    - Weekly teaching hours
+    """
+    try:
+        # Verify user is faculty
+        if current_user.role.value != "faculty":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Only faculty members can access this dashboard"
+            )
+
+        # Check if faculty_id is linked to the user
+        if not current_user.faculty_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Faculty ID not linked to your account"
+            )
+
+        # Fetch timetable entries for this faculty
+        timetables = await db.db.timetables.find(
+            {"entries.faculty_id": current_user.faculty_id}
+        ).to_list(length=None)
+
+        # Flatten all entries from all timetables
+        all_entries = []
+        for timetable in timetables:
+            entries = timetable.get("entries", [])
+            all_entries.extend(entries)
+
+        # Filter entries for this faculty
+        faculty_entries = [
+            e for e in all_entries 
+            if e.get("faculty_id") == current_user.faculty_id
+        ]
+
+        # Calculate metrics
+        total_classes = len(faculty_entries)
+        
+        # Get today's classes
+        today = datetime.utcnow().strftime("%A")
+        today_classes = [
+            e for e in faculty_entries 
+            if e.get("day", "").lower() == today.lower()
+        ]
+
+        # Calculate weekly hours (assuming all entries are in the current week)
+        weekly_hours = 0
+        for entry in faculty_entries:
+            duration = entry.get("duration_minutes", 60)
+            weekly_hours += duration / 60  # Convert minutes to hours
+
+        return {
+            "faculty_id": current_user.faculty_id,
+            "faculty_name": current_user.full_name,
+            "total_classes": total_classes,
+            "today_classes": len(today_classes),
+            "weekly_hours": round(weekly_hours, 2),
+            "today": today
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error fetching faculty dashboard: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch dashboard data: {str(e)}"
+        )

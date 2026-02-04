@@ -12,7 +12,15 @@ router = APIRouter()
 # -----------------------------
 def serialize_user(user: dict) -> dict:
     user["id"] = str(user["_id"])
-    user.pop("_id", None)
+    user.pop("_id", None)    
+    # Convert ObjectId fields to strings
+    if "faculty_id" in user and user["faculty_id"]:
+        user["faculty_id"] = str(user["faculty_id"]) if not isinstance(user["faculty_id"], str) else user["faculty_id"]
+    if "group_id" in user and user["group_id"]:
+        user["group_id"] = str(user["group_id"]) if not isinstance(user["group_id"], str) else user["group_id"]
+    
+    # Remove hashed_password before returning
+    user.pop("hashed_password", None)
     return user
 
 
@@ -25,7 +33,12 @@ async def get_users(
     limit: int = Query(100, ge=1, le=1000),
     current_user: User = Depends(get_current_active_user),
 ):
-    if current_user.role != UserRole.admin:
+    # Check admin role - handle both enum and string values
+    user_role = current_user.role
+    if isinstance(user_role, UserRole):
+        user_role = user_role.value
+    
+    if user_role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
     users = await db.db.users.find().skip(skip).limit(limit).to_list(length=limit)

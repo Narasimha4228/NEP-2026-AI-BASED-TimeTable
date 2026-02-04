@@ -1,0 +1,4 @@
+[
+  { "id": "r1", "name": "Lecture Hall A", "capacity": 80, "type": "Lecture" },
+  { "id": "r2", "name": "Computer Lab 1", "capacity": 30, "type": "Lab" }
+]

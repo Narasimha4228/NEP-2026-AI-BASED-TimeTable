@@ -1,3 +1,11 @@
+
+# Explicitly load .env using dotenv
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent / ".env")
+load_dotenv(Path(__file__).parent.parent / ".env")
+
 from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings
 from typing import List, Optional
@@ -38,7 +46,7 @@ class Settings(BaseSettings):
     
     model_config = {
         "case_sensitive": True,
-        "env_file": ".env",
+        "env_file": [".env", "../.env"],
         "extra": "ignore"
     }
 

@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 import random
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -49,6 +49,13 @@ class GeneticTimetableGenerator:
         generations: int = 80,
         mutation_rate: float = 0.1,
         crossover_rate: float = 0.8,
+        test_mode: bool = False,
+        faculties: Optional[List[Dict[str, Any]]] = None,
+        courses: Optional[List[Dict[str, Any]]] = None,
+        rooms: Optional[List[Dict[str, Any]]] = None,
+        student_groups: Optional[List[Dict[str, Any]]] = None,
+        academic_setup: Optional[Dict[str, Any]] = None,
+        time_rules: Optional[Dict[str, Any]] = None,
     ):
         self.population_size = population_size
         self.generations = generations
@@ -56,15 +63,34 @@ class GeneticTimetableGenerator:
         self.crossover_rate = crossover_rate
         self.elite_size = 5
 
-        self.data_collector = TimetableDataCollector()
+        self.test_mode = test_mode
+        # when not in test mode we collect data from DB via TimetableDataCollector
+        self.data_collector = None if test_mode else TimetableDataCollector()
 
-        self.academic_setup = {}
-        self.courses = []
-        self.faculty = []
-        self.student_groups = []
-        self.rooms = []
-        self.time_rules = {}
+        # allow passing sample data in test mode
+        self.academic_setup = academic_setup or {}
+        self.courses = courses or []
+        self.faculty = faculties or []
+        self.student_groups = student_groups or []
+        self.rooms = rooms or []
+        self.time_rules = time_rules or {}
         self.time_slots: List[TimeSlot] = []
+
+        # sensible defaults for test mode
+        if self.test_mode:
+            if not self.academic_setup:
+                self.academic_setup = {
+                    "working_days": {"Monday": True, "Tuesday": True, "Wednesday": True, "Thursday": True, "Friday": True}
+                }
+            if not self.time_rules:
+                self.time_rules = {
+                    "college_start_time": "09:00",
+                    "college_end_time": "17:00",
+                    "class_duration": 60,
+                    "break_duration": 10,
+                    "lunch_start_time": "13:00",
+                    "lunch_end_time": "14:00",
+                }
 
     # -------------------- EXPLAINABLE AI RULES --------------------
 
@@ -208,17 +234,19 @@ class GeneticTimetableGenerator:
 
     # -------------------- MAIN ENTRY POINT --------------------
 
-    async def generate_timetable(self, program_id: str, semester: int, academic_year: str):
-        collected = await self.data_collector.collect_all_data(
-            program_id, semester, academic_year
-        )
+    async def generate_timetable(self, program_id: Optional[str] = None, semester: Optional[int] = None, academic_year: Optional[str] = None):
+        # If not in test mode, collect data from DB as before
+        if not self.test_mode:
+            collected = await self.data_collector.collect_all_data(
+                program_id, semester, academic_year
+            )
 
-        self.academic_setup = collected["academic_setup"]
-        self.courses = collected["courses"]
-        self.faculty = collected["faculty"]
-        self.student_groups = collected["student_groups"]
-        self.rooms = collected["rooms"]
-        self.time_rules = collected["time_rules"]
+            self.academic_setup = collected["academic_setup"]
+            self.courses = collected["courses"]
+            self.faculty = collected["faculty"]
+            self.student_groups = collected["student_groups"]
+            self.rooms = collected["rooms"]
+            self.time_rules = collected["time_rules"]
 
         self.generate_time_slots()
 
