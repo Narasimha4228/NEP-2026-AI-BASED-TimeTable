@@ -1,0 +1,41 @@
+{
+  "training_config": {
+    "description": "Genetic Algorithm Model Training Configuration",
+    "version": "1.0",
+    "created_date": "2026-02-05"
+  },
+  "hyperparameters": {
+    "population_size": 50,
+    "generations": 100,
+    "mutation_rate": 0.1,
+    "crossover_rate": 0.8,
+    "elite_percentage": 0.1,
+    "tournament_size": 3
+  },
+  "optimization": {
+    "early_stopping_patience": 10,
+    "convergence_threshold": 0.001,
+    "validation_split": 0.2
+  },
+  "data": {
+    "training_data_file": "training_data.json",
+    "validation_data_file": "validation_data.json",
+    "test_data_file": "test_data.json"
+  },
+  "constraints": {
+    "num_entries": 150,
+    "num_slots": 60,
+    "num_rooms": 15,
+    "num_instructors": 25,
+    "num_courses": 30,
+    "num_students": 500,
+    "max_hours_per_day": 8,
+    "min_break_between_classes": 15
+  },
+  "output": {
+    "model_dir": "models/",
+    "results_dir": "results/",
+    "save_frequency": 10,
+    "generate_report": true
+  }
+}

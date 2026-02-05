@@ -22,7 +22,7 @@ import {
   SaveAlt as SaveDraftIcon,
   School as AcademicIcon,
 } from '@mui/icons-material';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 
 // Context and Components
 import { TimetableProvider, useTimetableContext } from '../../contexts/TimetableContext';
@@ -94,13 +94,17 @@ const CreateTimetableInner: React.FC = () => {
     type: 'success' | 'error' | 'info' | 'warning' 
   } | null>(null);
   const [completedTabs, setCompletedTabs] = useState<number[]>([]);
+  const [componentLoading, setComponentLoading] = useState(true); // Local loading state
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [justSaved, setJustSaved] = useState(false);  // Track if we just saved
   
   const { id: timetableId } = useParams<{ id?: string }>();
+  const navigate = useNavigate();
   
   const {
     formData,
-    loading,
     saving,
+    currentTimetable,
     loadTimetable,
     saveDraft,
     saveTimetable,
@@ -113,17 +117,27 @@ const CreateTimetableInner: React.FC = () => {
   useEffect(() => {
     console.log('🚀 CreateTimetable useEffect - timetableId:', timetableId);
     console.log('🚀 Loading initial data...');
-    loadPrograms();
     
-    if (timetableId && timetableId !== 'new') {
-      console.log('📝 EDIT MODE - Loading existing timetable:', timetableId);
-      console.log('📝 Current form data before loading:', formData);
-      loadTimetable(timetableId).then(() => {
-        console.log('📝 Timetable loaded, new form data:', formData);
-      });
-    } else {
-      console.log('🆕 CREATE MODE - Starting with new timetable');
-    }
+    const initializeData = async () => {
+      try {
+        loadPrograms();
+        
+        if (timetableId && timetableId !== 'new') {
+          console.log('📝 EDIT MODE - Loading existing timetable:', timetableId);
+          await loadTimetable(timetableId);
+          console.log('📝 Timetable loaded successfully');
+        } else {
+          console.log('🆕 CREATE MODE - Starting with new timetable');
+        }
+      } catch (error) {
+        console.error('Error initializing timetable:', error);
+        setLoadError(`Failed to load timetable: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      } finally {
+        setComponentLoading(false);
+      }
+    };
+    
+    initializeData();
   }, [timetableId, loadTimetable, loadPrograms]);
 
   // Update completed tabs based on validation
@@ -134,6 +148,17 @@ const CreateTimetableInner: React.FC = () => {
     
     setCompletedTabs(completed);
   }, [formData, validateCurrentTab]);
+
+  // Navigate to edit page after save if we just created a new timetable
+  useEffect(() => {
+    if (justSaved && currentTimetable && (currentTimetable.id || (currentTimetable as any)._id) && !timetableId) {
+      const savedId = currentTimetable.id || (currentTimetable as any)._id;
+      console.log('✅ Timetable saved with ID:', savedId);
+      console.log('🔄 Navigating to edit page for generation...');
+      navigate(`/edit/${savedId}`, { replace: true });
+      setJustSaved(false);
+    }
+  }, [currentTimetable, justSaved, timetableId, navigate]);
 
   const handleTabChange = async (_event: React.SyntheticEvent, newValue: number) => {
     // Auto-save current tab data before switching
@@ -162,15 +187,18 @@ const CreateTimetableInner: React.FC = () => {
 
   const handleSaveDraft = async () => {
     try {
+      console.log('🔄 Attempting to save draft...');
       await saveDraft();
       setNotification({ 
         message: 'Draft saved successfully', 
         type: 'success' 
       });
-    } catch (error) {
-      console.error('Save draft error:', error);
+      console.log('✅ Draft save completed');
+    } catch (error: any) {
+      console.error('❌ Save draft error:', error);
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Unknown error occurred';
       setNotification({ 
-        message: 'Failed to save draft', 
+        message: `Failed to save draft: ${errorMessage}`, 
         type: 'error' 
       });
     }
@@ -178,15 +206,22 @@ const CreateTimetableInner: React.FC = () => {
 
   const handleSave = async () => {
     try {
+      console.log('🔄 Attempting to save timetable...');
       await saveTimetable();
+      
+      // Set flag to trigger navigation after currentTimetable updates
+      setJustSaved(true);
+      
       setNotification({ 
-        message: 'Timetable saved successfully', 
+        message: 'Timetable saved successfully! Ready to generate.', 
         type: 'success' 
       });
-    } catch (error) {
-      console.error('Save error:', error);
+      console.log('✅ Timetable save completed');
+    } catch (error: any) {
+      console.error('❌ Save error:', error);
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Unknown error occurred';
       setNotification({ 
-        message: 'Failed to save timetable', 
+        message: `Failed to save timetable: ${errorMessage}`, 
         type: 'error' 
       });
     }
@@ -201,7 +236,7 @@ const CreateTimetableInner: React.FC = () => {
   const progress = (completedTabs.length / tabConfig.length) * 100;
   const currentTabData = tabConfig[activeTab];
 
-  if (loading) {
+  if (componentLoading) {
     return (
       <Box sx={{ 
         display: 'flex', 
@@ -209,17 +244,41 @@ const CreateTimetableInner: React.FC = () => {
         alignItems: 'center', 
         height: '100vh',
         backgroundColor: '#0a0a0a',
-        color: 'white' 
+        color: 'white',
+        flexDirection: 'column',
+        gap: 2
       }}>
-        <Box sx={{ textAlign: 'center' }}>
-          <CircularProgress size={60} />
-          <Typography sx={{ mt: 2, color: '#b0b0b0' }}>
-            Loading timetable data...
-          </Typography>
-        </Box>
+        {loadError ? (
+          <Box sx={{ textAlign: 'center', maxWidth: '500px' }}>
+            <Typography sx={{ color: '#f44336', mb: 2, fontSize: '18px' }}>
+              ❌ Error Loading Timetable
+            </Typography>
+            <Typography sx={{ color: '#b0b0b0', mb: 3, fontSize: '14px' }}>
+              {loadError}
+            </Typography>
+            <Button 
+              variant="contained" 
+              onClick={() => window.location.href = '/timetables'}
+            >
+              Back to Timetables
+            </Button>
+          </Box>
+        ) : (
+          <Box sx={{ textAlign: 'center' }}>
+            <CircularProgress size={60} />
+            <Typography sx={{ mt: 2, color: '#b0b0b0', fontSize: '14px' }}>
+              ⏳ Loading timetable data...
+            </Typography>
+            <Typography sx={{ mt: 1, color: '#888', fontSize: '12px' }}>
+              (This should take a few seconds)
+            </Typography>
+          </Box>
+        )}
       </Box>
     );
   }
+
+  console.log('✅ CreateTimetable render - componentLoading is false, rendering main content');
 
   return (
     <Box sx={{ 
@@ -229,6 +288,27 @@ const CreateTimetableInner: React.FC = () => {
       backgroundColor: '#0a0a0a',
       color: 'white' 
     }}>
+      {/* ERROR DISPLAY - Show prominently if there's an error */}
+      {loadError && (
+        <Box sx={{ 
+          p: 3, 
+          backgroundColor: '#ff5252', 
+          color: 'white',
+          textAlign: 'center',
+          fontSize: '14px',
+          fontWeight: 'bold'
+        }}>
+          ❌ {loadError}
+          <Button 
+            size="small" 
+            variant="contained" 
+            sx={{ ml: 2 }}
+            onClick={() => window.location.href = '/timetables'}
+          >
+            Back to Timetables
+          </Button>
+        </Box>
+      )}
       
       {/* Navigation Tabs */}
       <Paper sx={{ 
@@ -398,12 +478,16 @@ const CreateTimetableInner: React.FC = () => {
         flex: 1, 
         overflow: 'auto',
         backgroundColor: '#0a0a0a',
-        pt: '164px', // Add padding for header (64px) + fixed navigation (100px)
+        pt: '120px', // Reduced padding (header 64px + nav ~56px)
         pb: 3,
         px: 3
       }}>
         <Box sx={{ maxWidth: '1400px', mx: 'auto' }}>
-          {React.createElement(currentTabData.component)}
+          {currentTabData ? React.createElement(currentTabData.component) : (
+            <Typography sx={{ color: 'white', p: 3 }}>
+              Error: Tab component not found
+            </Typography>
+          )}
         </Box>
       </Box>
 

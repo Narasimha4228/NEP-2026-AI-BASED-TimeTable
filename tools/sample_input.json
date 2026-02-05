@@ -1,0 +1,31 @@
+{
+  "courses": [
+    {
+      "course_name": "Programming Fundamentals",
+      "course_code": "CS101",
+      "faculty": "Dr. Smith",
+      "days": ["Monday"],
+      "times": [{"start":"09:00","end":"10:00"}],
+      "room": "Room 101",
+      "periods": 1
+    },
+    {
+      "course_name": "Data Structures",
+      "course_code": "CS102",
+      "faculty": "Dr. Johnson",
+      "days": ["Monday"],
+      "times": [{"start":"10:00","end":"11:00"}],
+      "room": "Room 102",
+      "periods": 1
+    },
+    {
+      "course_name": "Database Design",
+      "course_code": "CS103",
+      "faculty": "Dr. Williams",
+      "days": ["Wednesday"],
+      "times": [{"start":"09:00","end":"10:00"}],
+      "room": "Room 103",
+      "periods": 1
+    }
+  ]
+}

@@ -27,50 +27,106 @@ def convert_objectid_to_str(obj: Any) -> Any:
         return [convert_objectid_to_str(item) for item in obj]
     return obj
 
+
+# =====================================================
+# HELPER: Normalize timetable entries format
+# =====================================================
+def normalize_timetable_entry(entry: Dict) -> Dict:
+    """
+    Normalize entry format from database to frontend format.
+    Handles both flat entries (day, start_time, end_time) and nested (time_slot object).
+    """
+    if not entry:
+        return entry
+    
+    # If already has time_slot, return as-is
+    if "time_slot" in entry:
+        return entry
+    
+    # Transform flat structure to nested time_slot
+    normalized = {k: v for k, v in entry.items() if k not in ['day', 'start_time', 'end_time']}
+    
+    # Create time_slot object
+    normalized["time_slot"] = {
+        "day": entry.get("day", "Monday"),
+        "start_time": entry.get("start_time", "09:00"),
+        "end_time": entry.get("end_time", "10:00"),
+        "duration_minutes": entry.get("duration_minutes", 50)
+    }
+    
+    # Ensure course_id and faculty_id exist (use codes if IDs not available)
+    if "course_id" not in normalized and "course_code" in normalized:
+        normalized["course_id"] = normalized["course_code"]
+    if "faculty_id" not in normalized and "faculty" in normalized:
+        normalized["faculty_id"] = normalized["faculty"]
+    if "room_id" not in normalized and "room" in normalized:
+        normalized["room_id"] = normalized["room"]
+    
+    return normalized
+
 # =====================================================
 # GET TIMETABLES (ROLE BASED FILTERING)
 # =====================================================
-@router.get("/", response_model=List[Timetable])
+@router.get("/")
 async def get_timetables(
     current_user: User = Depends(get_current_active_user),
 ):
-    role = current_user.role.value  # ✅ FIX HERE
+    try:
+        role = current_user.role.value  # ✅ FIX HERE
 
-    if role == "admin":
-        query = {}
+        if role == "admin":
+            # Admin sees ALL timetables (both drafts and published)
+            # Show both drafts and published for editing purposes
+            query = {}
 
-    elif role == "faculty":
-        # If no faculty_id assigned, return empty list
-        if not current_user.faculty_id:
-            return []
+        elif role == "faculty":
+            # If no faculty_id assigned, return empty list
+            if not current_user.faculty_id:
+                return []
 
-        query = {
-            "entries.faculty_id": current_user.faculty_id
-        }
+            query = {
+                "entries.faculty_id": current_user.faculty_id,
+                "is_draft": False  # Faculty only sees published timetables
+            }
 
-    elif role == "student":
-        # If no group_id assigned, return empty list
-        if not current_user.group_id:
-            return []
+        elif role == "student":
+            # Students see published timetables
+            # If group_id is assigned, filter by group; otherwise show all published timetables
+            if current_user.group_id:
+                query = {
+                    "$or": [
+                        {"entries.group_id": current_user.group_id},
+                        {"entries.student_ids": ObjectId(current_user.id)}
+                    ],
+                    "is_draft": False
+                }
+            else:
+                # If no group assigned, show all published timetables
+                query = {
+                    "is_draft": False
+                }
 
-        query = {
-            "entries.group_id": current_user.group_id,
-            "is_draft": False
-        }
+        else:
+            raise HTTPException(status_code=403, detail="Invalid role")
 
-    else:
-        raise HTTPException(status_code=403, detail="Invalid role")
+        timetables = await db.db.timetables.find(query).sort("created_at", -1).to_list(None)
 
-    timetables = await db.db.timetables.find(query).to_list(100)
+        result = []
+        for t in timetables:
+            # Convert all ObjectIds to strings recursively
+            t = convert_objectid_to_str(t)
+            t["id"] = t.pop("_id", None)
+            
+            # Normalize entries format for frontend
+            if "entries" in t and t["entries"]:
+                t["entries"] = [normalize_timetable_entry(entry) for entry in t["entries"]]
+            
+            result.append(t)
 
-    result = []
-    for t in timetables:
-        # Convert all ObjectIds to strings recursively
-        t = convert_objectid_to_str(t)
-        t["id"] = t.pop("_id", None)
-        result.append(t)
-
-    return result
+        return result
+    except Exception as e:
+        logging.error(f"❌ Error in get_timetables: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 # =====================================================
@@ -189,6 +245,9 @@ async def get_my_timetable(
     entries = timetable.get("entries", [])
     # Filter entries for this group only
     my_entries = [e for e in entries if e.get("group_id") == group_id]
+    
+    # Normalize entries format for frontend
+    my_entries = [normalize_timetable_entry(entry) for entry in my_entries]
 
     # Get department code from stored value or fetch from program
     dept_code = timetable.get("department_code")
@@ -312,6 +371,9 @@ async def filter_timetables(
     my_entries = entries
     print(f"Returning {len(my_entries)} entries to client")
     
+    # Normalize entries format for frontend
+    my_entries = [normalize_timetable_entry(entry) for entry in my_entries]
+    
     # Get department code from stored value or fetch from program
     dept_code = timetable.get("department_code")
     if not dept_code and timetable.get("program_id"):
@@ -404,6 +466,10 @@ async def get_timetable_public(
     # Convert all ObjectIds to strings
     timetable = convert_objectid_to_str(timetable)
     timetable["id"] = timetable.pop("_id", None)
+    
+    # Normalize entries format for frontend
+    if "entries" in timetable and timetable["entries"]:
+        timetable["entries"] = [normalize_timetable_entry(entry) for entry in timetable["entries"]]
 
     return timetable
 
@@ -443,6 +509,10 @@ async def get_timetable(
     # Convert all ObjectIds to strings
     timetable = convert_objectid_to_str(timetable)
     timetable["id"] = timetable.pop("_id", None)
+    
+    # Normalize entries format for frontend
+    if "entries" in timetable and timetable["entries"]:
+        timetable["entries"] = [normalize_timetable_entry(entry) for entry in timetable["entries"]]
 
     return timetable
 
@@ -456,25 +526,50 @@ async def create_timetable(
     current_user: User = Depends(get_current_active_user),
 ):
     """Create a new timetable"""
-    timetable_dict = timetable_data.model_dump()
-    timetable_dict["created_by"] = ObjectId(current_user.id)
-    timetable_dict["created_at"] = datetime.utcnow()
-    timetable_dict["is_draft"] = True
-    
-    # Fetch and store the program's department code
     try:
-        program = await db.db.programs.find_one({"_id": ObjectId(timetable_dict["program_id"])})
-    except Exception:
-        program = await db.db.programs.find_one({"_id": timetable_dict["program_id"]})
-    
-    if program:
-        timetable_dict["department_code"] = program.get("code")
+        print(f"🔧 DEBUG: Creating timetable with data: {timetable_data.dict()}")
+        timetable_dict = timetable_data.model_dump()
+        
+        # Convert program_id to ObjectId for database storage
+        try:
+            timetable_dict["program_id"] = ObjectId(timetable_dict["program_id"])
+        except Exception:
+            pass  # Already an ObjectId
+        
+        timetable_dict["created_by"] = ObjectId(current_user.id)  # Store as ObjectId in DB
+        timetable_dict["created_at"] = datetime.utcnow()
+        
+        # Preserve is_draft status
+        if "is_draft" not in timetable_dict:
+            timetable_dict["is_draft"] = True
+        
+        # Fetch and store the program's department code
+        try:
+            program = await db.db.programs.find_one({"_id": timetable_dict["program_id"]})
+            if program:
+                timetable_dict["department_code"] = program.get("code")
+        except Exception as e:
+            print(f"⚠️ DEBUG: Could not fetch program: {str(e)}")
 
-    result = await db.db.timetables.insert_one(timetable_dict)
-    timetable_dict["id"] = str(result.inserted_id)
-    del timetable_dict["_id"]
+        result = await db.db.timetables.insert_one(timetable_dict)
+        timetable_dict["_id"] = str(result.inserted_id)  # Convert to string immediately
+        
+        # Convert back to strings for response
+        timetable_dict["id"] = str(result.inserted_id)
+        timetable_dict["created_by"] = str(timetable_dict["created_by"])  # Convert to string for response
+        timetable_dict["program_id"] = str(timetable_dict["program_id"])  # Convert to string for response
+        
+        print(f"✅ DEBUG: Timetable created with ID: {timetable_dict['id']}")
 
-    return Timetable(**timetable_dict)
+        return Timetable(**timetable_dict)
+    except Exception as e:
+        import logging
+        import traceback
+        logger = logging.getLogger(__name__)
+        logger.exception("Error creating timetable")
+        print(f"❌ DEBUG: Error creating timetable: {str(e)}")
+        print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error creating timetable: {str(e)}")
 
 
 # =====================================================
@@ -487,34 +582,51 @@ async def update_timetable(
     current_user: User = Depends(get_current_active_user),
 ):
     """Update an existing timetable"""
-    # Check if timetable exists and user has access
-    existing = await db.db.timetables.find_one({"_id": ObjectId(timetable_id)})
-    if not existing:
-        raise HTTPException(status_code=404, detail="Timetable not found")
+    try:
+        # Check if timetable exists and user has access
+        existing = await db.db.timetables.find_one({"_id": ObjectId(timetable_id)})
+        if not existing:
+            raise HTTPException(status_code=404, detail="Timetable not found")
 
-    # Role-based access control
-    role = current_user.role.value
-    if role == "faculty" and not any(
-        e.get("faculty_id") == current_user.faculty_id for e in existing.get("entries", [])
-    ):
-        raise HTTPException(status_code=403, detail="Access denied")
-    elif role == "student" and not any(
-        e.get("group_id") == current_user.group_id for e in existing.get("entries", [])
-    ):
-        raise HTTPException(status_code=403, detail="Access denied")
+        # Role-based access control
+        role = current_user.role.value
+        if role == "faculty" and not any(
+            e.get("faculty_id") == current_user.faculty_id for e in existing.get("entries", [])
+        ):
+            raise HTTPException(status_code=403, detail="Access denied")
+        elif role == "student" and not any(
+            e.get("group_id") == current_user.group_id for e in existing.get("entries", [])
+        ):
+            raise HTTPException(status_code=403, detail="Access denied")
 
-    # Update the timetable
-    update_data = {"$set": {**timetable_data, "updated_at": datetime.utcnow()}}
-    await db.db.timetables.update_one({"_id": ObjectId(timetable_id)}, update_data)
+        # Prepare update data
+        update_dict = {**timetable_data, "updated_at": datetime.utcnow()}
+        
+        # Convert program_id to ObjectId if it's a string
+        if "program_id" in update_dict and isinstance(update_dict["program_id"], str):
+            try:
+                update_dict["program_id"] = ObjectId(update_dict["program_id"])
+            except Exception:
+                pass
 
-    # Return updated timetable
-    updated = await db.db.timetables.find_one({"_id": ObjectId(timetable_id)})
-    updated["id"] = str(updated["_id"])
-    del updated["_id"]
-    updated["created_by"] = str(updated["created_by"])
-    updated["program_id"] = str(updated["program_id"])
+        # Update the timetable
+        update_data = {"$set": update_dict}
+        await db.db.timetables.update_one({"_id": ObjectId(timetable_id)}, update_data)
 
-    return Timetable(**updated)
+        # Return updated timetable
+        updated = await db.db.timetables.find_one({"_id": ObjectId(timetable_id)})
+        updated["id"] = str(updated["_id"])
+        updated["created_by"] = str(updated["created_by"]) if isinstance(updated.get("created_by"), ObjectId) else updated.get("created_by")
+        updated["program_id"] = str(updated["program_id"]) if isinstance(updated.get("program_id"), ObjectId) else updated.get("program_id")
+
+        return Timetable(**updated)
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"❌ DEBUG: Error updating timetable: {str(e)}")
+        print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error updating timetable: {str(e)}")
 
 
 # =====================================================
@@ -545,12 +657,16 @@ async def delete_timetable(
 @router.post("/{timetable_id}/generate")
 async def generate_timetable(
     timetable_id: str,
-    options: dict = None,
+    request_body: dict = None,
     current_user: User = Depends(get_current_active_user),
 ):
-    """Generate timetable entries using AI/optimization"""
+    """Generate timetable entries using AI/optimization with user-provided data"""
     # Check if timetable exists
-    existing = await db.db.timetables.find_one({"_id": ObjectId(timetable_id)})
+    try:
+        existing = await db.db.timetables.find_one({"_id": ObjectId(timetable_id)})
+    except Exception:
+        existing = await db.db.timetables.find_one({"_id": timetable_id})
+    
     if not existing:
         raise HTTPException(status_code=404, detail="Timetable not found")
 
@@ -558,22 +674,35 @@ async def generate_timetable(
     if current_user.role.value != "admin":
         raise HTTPException(status_code=403, detail="Only admins can generate timetables")
 
-    # Determine generation method and parameters
-    opts = options or {}
+    # Extract generation options and user data
+    opts = request_body or {}
     method = opts.get("method", "advanced")
     semester = existing.get("semester")
     program_id = str(existing.get("program_id")) if existing.get("program_id") else None
-
+    
+    # Get academic setup (user-provided data from frontend)
+    academic_setup = opts.get("academic_setup", {})
+    user_courses = academic_setup.get("courses", [])
+    user_faculty = academic_setup.get("faculty", [])
+    user_rooms = academic_setup.get("rooms", [])
+    
     logger = logging.getLogger(__name__)
+    logger.info(f"🔄 Generation request - User courses count: {len(user_courses)}, Faculty count: {len(user_faculty)}")
 
     try:
         if method == "advanced":
             # Use AdvancedTimetableGenerator
             generator = AdvancedTimetableGenerator()
 
-            # Load DB data (async) and apply any academic setup passed in options
-            academic_setup = opts.get("academic_setup")
-            await generator.load_from_database_with_setup(program_id, semester, academic_setup)
+            # If user provided data, use it; otherwise load from database
+            if user_courses and len(user_courses) > 0:
+                logger.info(f"📥 Using user-provided data: {len(user_courses)} courses")
+                # Load with user-provided setup data
+                await generator.load_from_database_with_setup(program_id, semester, academic_setup)
+            else:
+                # Fallback to database data
+                logger.info("📥 Using database data (no user courses provided)")
+                await generator.load_from_database_with_setup(program_id, semester, academic_setup)
 
             # Run the synchronous generation in a threadpool to avoid blocking event loop
             loop = asyncio.get_running_loop()
@@ -585,6 +714,37 @@ async def generate_timetable(
 
             # Save generated entries into timetable document
             entries = result.get("schedule", [])
+            
+            # ✅ NEW: Validate faculty max periods per day constraint
+            faculty_max_per_day = 1  # Default to 1, can be overridden by metadata
+            if "metadata" in existing and isinstance(existing["metadata"], dict):
+                constraints = existing["metadata"].get("constraints", {})
+                faculty_max_per_day = constraints.get("faculty_max_periods_per_day", 1)
+            
+            # Check constraint: faculty max periods per day
+            faculty_periods_by_day = {}  # {faculty_id: {day: count}}
+            for entry in entries:
+                faculty_id = entry.get("faculty_id") or entry.get("faculty")
+                day = entry.get("day") or (entry.get("time_slot", {}).get("day") if isinstance(entry.get("time_slot"), dict) else None)
+                
+                if faculty_id and day:
+                    if faculty_id not in faculty_periods_by_day:
+                        faculty_periods_by_day[faculty_id] = {}
+                    if day not in faculty_periods_by_day[faculty_id]:
+                        faculty_periods_by_day[faculty_id][day] = 0
+                    faculty_periods_by_day[faculty_id][day] += 1
+            
+            # Check for violations
+            violations = []
+            for faculty_id, days_dict in faculty_periods_by_day.items():
+                for day, count in days_dict.items():
+                    if count > faculty_max_per_day:
+                        violations.append(f"Faculty {faculty_id} has {count} periods on {day} (max: {faculty_max_per_day})")
+            
+            if violations:
+                logger.warning(f"⚠️ Faculty constraint violations detected: {violations}")
+                print(f"⚠️ Faculty constraint violations: {violations}")
+            
             update_doc = {
                 "entries": entries,
                 "is_draft": False,
@@ -595,7 +755,8 @@ async def generate_timetable(
                 "metadata": {
                     "generation_attempts": result.get("attempts_made"),
                     "statistics": result.get("statistics"),
-                    "validation": result.get("validation")
+                    "validation": result.get("validation"),
+                    "constraint_violations": violations if violations else []
                 }
             }
 
@@ -665,17 +826,41 @@ async def save_draft_timetable(
     current_user: User = Depends(get_current_active_user),
 ):
     """Save a draft timetable"""
-    # Only admin can save drafts
-    if current_user.role.value != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can save draft timetables")
+    try:
+        # Convert program_id to ObjectId
+        if "program_id" in draft_data and isinstance(draft_data["program_id"], str):
+            try:
+                draft_data["program_id"] = ObjectId(draft_data["program_id"])
+            except Exception:
+                pass
+        
+        draft_data["created_by"] = ObjectId(current_user.id)
+        draft_data["created_at"] = datetime.utcnow()
+        draft_data["is_draft"] = True
 
-    draft_data["created_by"] = ObjectId(current_user.id)
-    draft_data["created_at"] = datetime.utcnow()
-    draft_data["is_draft"] = True
-
-    result = await db.db.timetables.insert_one(draft_data)
-    draft_data["id"] = str(result.inserted_id)
-    del draft_data["_id"]
-
-    return {"message": "Draft saved successfully", "timetable_id": draft_data["id"]}
+        result = await db.db.timetables.insert_one(draft_data)
+        draft_data["id"] = str(result.inserted_id)
+        draft_data["_id"] = result.inserted_id
+        draft_data["created_by"] = str(draft_data["created_by"])
+        draft_data["program_id"] = str(draft_data.get("program_id", ""))
+        
+        # Return the full timetable object instead of just a message
+        return {
+            "id": draft_data["id"],
+            "_id": str(draft_data["_id"]),
+            "title": draft_data.get("title"),
+            "program_id": draft_data.get("program_id"),
+            "semester": draft_data.get("semester"),
+            "academic_year": draft_data.get("academic_year"),
+            "is_draft": True,
+            "created_by": draft_data["created_by"],
+            "created_at": draft_data["created_at"],
+            "entries": draft_data.get("entries", []),
+            "metadata": draft_data.get("metadata", {}),
+        }
+    except Exception as e:
+        import traceback
+        print(f"❌ DEBUG: Error saving draft: {str(e)}")
+        print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error saving draft: {str(e)}")
 

@@ -103,6 +103,7 @@ export interface TimetableFormData {
     avoid_first_last_slot: boolean;
     balance_workload: boolean;
     prefer_morning_slots: boolean;
+    faculty_max_periods_per_day: number;  // NEW: Max periods per faculty per day
   };
 
   // Draft and generation settings
@@ -200,6 +201,7 @@ const defaultFormData: TimetableFormData = {
     avoid_first_last_slot: false,
     balance_workload: true,
     prefer_morning_slots: false,
+    faculty_max_periods_per_day: 1,  // NEW: Max 1 period per faculty per day
   },
 
   is_draft: true,
@@ -328,6 +330,15 @@ export const TimetableProvider: React.FC<TimetableProviderProps> = ({ children }
       // Get the timetable ID - handle both id and _id fields
       const timetableId = currentTimetable?.id || (currentTimetable as any)?._id;
       
+      console.log('💾 [saveDraft] Starting save operation');
+      console.log('💾 [saveDraft] Timetable ID:', timetableId);
+      console.log('💾 [saveDraft] Form Data:', {
+        title: formData.title,
+        program_id: formData.program_id,
+        semester: formData.semester,
+        academic_year: formData.academic_year,
+      });
+      
       const draftData = {
         title: formData.title,
         program_id: formData.program_id,
@@ -352,15 +363,24 @@ export const TimetableProvider: React.FC<TimetableProviderProps> = ({ children }
       if (timetableId) {
         console.log('📝 Updating existing timetable:', timetableId);
         result = await timetableService.updateTimetable(timetableId, draftData);
+        console.log('✅ Update successful:', result);
       } else {
         console.log('🆕 Creating new draft timetable');
         result = await timetableService.saveDraft(draftData);
+        console.log('✅ Create successful:', result);
       }
       
       setCurrentTimetable(result);
-      console.log('📄 Draft saved successfully');
-    } catch (error) {
+      console.log('📄 Draft saved successfully with ID:', result.id || (result as any)._id);
+    } catch (error: any) {
       console.error('❌ Error saving draft:', error);
+      console.error('❌ Error details:', {
+        message: error?.message,
+        response: error?.response?.data,
+        status: error?.response?.status,
+        stack: error?.stack
+      });
+      throw error; // Re-throw for parent to handle
     } finally {
       setSaving(false);
     }
@@ -369,6 +389,8 @@ export const TimetableProvider: React.FC<TimetableProviderProps> = ({ children }
   const saveTimetable = useCallback(async () => {
     setSaving(true);
     try {
+      console.log('💾 [saveTimetable] Starting save operation');
+      
       const timetableData: any = {
         title: formData.title,
         program_id: formData.program_id,
@@ -386,25 +408,49 @@ export const TimetableProvider: React.FC<TimetableProviderProps> = ({ children }
         },
       };
 
+      console.log('💾 [saveTimetable] Data to save:', {
+        title: timetableData.title,
+        program_id: timetableData.program_id,
+        semester: timetableData.semester,
+        academic_year: timetableData.academic_year,
+        metadata_keys: Object.keys(timetableData.metadata),
+      });
+
       // Get the timetable ID - handle both id and _id fields
       const timetableId = currentTimetable?.id || (currentTimetable as any)?._id;
+      console.log('💾 [saveTimetable] Timetable ID:', timetableId);
 
       let result: Timetable;
       if (timetableId) {
-        console.log('📝 Updating existing timetable:', timetableId);
+        console.log('📝 [saveTimetable] Updating existing timetable:', timetableId);
         result = await timetableService.updateTimetable(timetableId, {
           ...timetableData,
           is_draft: false,
         });
+        console.log('✅ [saveTimetable] Update successful:', result);
       } else {
-        console.log('🆕 Creating new timetable');
+        console.log('🆕 [saveTimetable] Creating new timetable');
         result = await timetableService.createTimetable(timetableData);
+        console.log('✅ [saveTimetable] Create successful:', result);
+      }
+      
+      // Ensure result has an id field - convert _id if needed
+      if (!result.id && (result as any)._id) {
+        (result as any).id = (result as any)._id;
       }
       
       setCurrentTimetable(result);
-      console.log('Timetable saved successfully');
-    } catch (error) {
-      console.error('Error saving timetable:', error);
+      console.log('✅ Timetable saved successfully with ID:', result.id || (result as any)._id);
+    } catch (error: any) {
+      console.error('❌ [saveTimetable] Error saving timetable:', error);
+      console.error('❌ [saveTimetable] Detailed error info:', {
+        message: error?.message,
+        response_status: error?.response?.status,
+        response_data: error?.response?.data,
+        error_code: error?.code,
+        stack: error?.stack,
+      });
+      throw error; // Re-throw so parent can handle navigation
     } finally {
       setSaving(false);
     }

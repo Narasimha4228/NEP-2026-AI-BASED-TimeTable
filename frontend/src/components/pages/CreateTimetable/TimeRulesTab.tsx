@@ -48,6 +48,7 @@ const TimeRulesTab: React.FC = () => {
   const [intervalBetweenClasses, setIntervalBetweenClasses] = useState<number>(formData.time_slots.break_duration || 10);
   const [maxContinuousHours, setMaxContinuousHours] = useState<number>(formData.constraints.max_consecutive_hours || 3);
   const [maxClassesPerDay, setMaxClassesPerDay] = useState<number>(formData.constraints.max_periods_per_day || 6);
+  const [facultyMaxPeriodsPerDay, setFacultyMaxPeriodsPerDay] = useState<number>(formData.constraints.faculty_max_periods_per_day || 1);
   const [maxLabClassesPerDay, setMaxLabClassesPerDay] = useState<number>(2);
   const [maxRepeatPerDay, setMaxRepeatPerDay] = useState<number>(1);
 
@@ -73,6 +74,7 @@ const TimeRulesTab: React.FC = () => {
     setIntervalBetweenClasses(formData.time_slots.break_duration || 10);
     setMaxContinuousHours(formData.constraints.max_consecutive_hours || 3);
     setMaxClassesPerDay(formData.constraints.max_periods_per_day || 6);
+    setFacultyMaxPeriodsPerDay(formData.constraints.faculty_max_periods_per_day || 1);
   }, [formData.time_slots, formData.constraints]);
 
   // (save handled inline in the Save Settings button)
@@ -88,6 +90,7 @@ const TimeRulesTab: React.FC = () => {
   if (params.interval_between_classes !== undefined) setIntervalBetweenClasses(params.interval_between_classes);
   if (params.max_continuous_hours !== undefined) setMaxContinuousHours(params.max_continuous_hours);
   if (params.max_classes_per_day !== undefined) setMaxClassesPerDay(params.max_classes_per_day);
+  if (params.faculty_max_periods_per_day !== undefined) setFacultyMaxPeriodsPerDay(params.faculty_max_periods_per_day);
   if (params.max_lab_classes_per_day !== undefined) setMaxLabClassesPerDay(params.max_lab_classes_per_day);
   if (params.max_repeat_per_day !== undefined) setMaxRepeatPerDay(params.max_repeat_per_day);
   };
@@ -205,6 +208,11 @@ const TimeRulesTab: React.FC = () => {
             </Box>
 
             <Box sx={{ width: { xs: '100%', md: '32%' } }}>
+              <Typography variant="caption">Max periods per faculty per day</Typography>
+              <Slider value={facultyMaxPeriodsPerDay} onChange={(_e,v)=>setFacultyMaxPeriodsPerDay(v as number)} min={1} max={8} valueLabelDisplay="auto" />
+            </Box>
+
+            <Box sx={{ width: { xs: '100%', md: '32%' } }}>
               <Typography variant="caption">Max lab classes in a day</Typography>
               <Slider value={maxLabClassesPerDay} onChange={(_e,v)=>setMaxLabClassesPerDay(v as number)} min={0} max={6} valueLabelDisplay="auto" />
             </Box>
@@ -227,6 +235,7 @@ const TimeRulesTab: React.FC = () => {
                       interval_between_classes: intervalBetweenClasses,
                       max_continuous_hours: maxContinuousHours,
                       max_classes_per_day: maxClassesPerDay,
+                      faculty_max_periods_per_day: facultyMaxPeriodsPerDay,
                       max_lab_classes_per_day: maxLabClassesPerDay,
                       max_repeat_per_day: maxRepeatPerDay,
                     };
@@ -245,7 +254,8 @@ const TimeRulesTab: React.FC = () => {
                       updateFormData('constraints', {
                         ...formData.constraints,
                         max_consecutive_hours: maxContinuousHours,
-                        max_periods_per_day: maxClassesPerDay
+                        max_periods_per_day: maxClassesPerDay,
+                        faculty_max_periods_per_day: facultyMaxPeriodsPerDay
                       });
                       
                       if (editingId) {
@@ -270,7 +280,7 @@ const TimeRulesTab: React.FC = () => {
 
                 <Button variant="outlined" onClick={()=>{
                   // reset form
-                  setNewRuleName(''); setNewRuleDesc(''); setLunchTime('12:30'); setIntervalBetweenClasses(10); setMaxContinuousHours(3); setMaxClassesPerDay(6); setMaxLabClassesPerDay(2); setMaxRepeatPerDay(1); setEditingId(null);
+                  setNewRuleName(''); setNewRuleDesc(''); setLunchTime('12:30'); setIntervalBetweenClasses(10); setMaxContinuousHours(3); setMaxClassesPerDay(6); setFacultyMaxPeriodsPerDay(1); setMaxLabClassesPerDay(2); setMaxRepeatPerDay(1); setEditingId(null);
                 }}>
                   Cancel
                 </Button>

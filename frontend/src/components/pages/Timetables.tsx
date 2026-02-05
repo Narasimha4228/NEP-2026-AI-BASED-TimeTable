@@ -56,11 +56,31 @@ const Timetables: React.FC = () => {
 
       try {
         setLoading(true);
+        setError(null);
+        console.log("📥 Fetching all timetables...");
+        
         const data = await timetableService.getAllTimetables();
+        console.log("✓ Timetables fetched:", data);
+        
         setTimetables(data);
-      } catch (err) {
-        const error = err as { response?: { data?: { detail?: string } } };
-        setError(error.response?.data?.detail || 'Failed to load timetables');
+      } catch (err: any) {
+        console.error("❌ Error fetching timetables:", {
+          error: err,
+          status: err.response?.status,
+          detail: err.response?.data?.detail,
+          message: err.message,
+        });
+        
+        // Show detailed error message
+        const errorMessage = 
+          err.response?.data?.detail || 
+          err.message || 
+          'Failed to load timetables. Please try again.';
+        
+        setError(errorMessage);
+        
+        // Set empty array instead of showing error
+        setTimetables([]);
       } finally {
         setLoading(false);
       }
@@ -87,6 +107,7 @@ const Timetables: React.FC = () => {
     if (!deleteDialog.timetable) return;
 
     const id = deleteDialog.timetable.id || deleteDialog.timetable._id;
+    if (!id) return; // Ensure ID exists
 
     setDeleting(true);
     try {
@@ -184,7 +205,7 @@ const Timetables: React.FC = () => {
                       {timetable.academic_year} — Semester {timetable.semester}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      Created on {formatDate(timetable.created_at)}
+                      Created on {timetable.created_at ? formatDate(timetable.created_at) : 'Unknown'}
                     </Typography>
                   </Box>
 

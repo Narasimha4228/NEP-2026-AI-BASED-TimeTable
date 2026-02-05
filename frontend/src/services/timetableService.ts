@@ -103,6 +103,19 @@ export interface TimetableCreate {
   academic_year: string;
 }
 
+export interface Rule {
+  id?: string;
+  name: string;
+  description?: string;
+  rule_type: string;
+  params?: any;
+  is_active?: boolean;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string | null;
+  [key: string]: any;
+}
+
 class TimetableService {
   private api = axios.create({
     baseURL: API_BASE_URL,
@@ -648,6 +661,42 @@ class TimetableService {
     if (!roomId) throw new Error('Room ID missing');
     const response = await this.api.delete(`/rooms/${roomId}`);
     console.log('✅ Room deleted:', response.data);
+    return response.data;
+  }
+
+  // ===============================
+  // RULES (Time & Rules tab)
+  // ===============================
+
+  /** Get rules */
+  async getRules(): Promise<Rule[]> {
+    const response = await this.api.get('/rules/');
+    console.log('📦 Raw rules from backend:', response.data);
+    const mapped = (response.data || []).map((r: any) => ({ id: r.id || r._id || (r._id ? String(r._id) : undefined), ...r })) as Rule[];
+    console.log('✅ Mapped rules:', mapped.length);
+    return mapped;
+  }
+
+  /** Create rule */
+  async createRule(ruleData: Partial<Rule>) {
+    const response = await this.api.post('/rules/', ruleData);
+    console.log('✅ Rule created:', response.data);
+    return response.data;
+  }
+
+  /** Update rule */
+  async updateRule(ruleId: string, ruleData: Partial<Rule>) {
+    if (!ruleId) throw new Error('Rule ID missing');
+    const response = await this.api.put(`/rules/${ruleId}`, ruleData);
+    console.log('✅ Rule updated:', response.data);
+    return response.data;
+  }
+
+  /** Delete rule */
+  async deleteRule(ruleId: string) {
+    if (!ruleId) throw new Error('Rule ID missing');
+    const response = await this.api.delete(`/rules/${ruleId}`);
+    console.log('✅ Rule deleted:', response.data);
     return response.data;
   }
 

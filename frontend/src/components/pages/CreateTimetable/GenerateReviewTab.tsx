@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, type ErrorInfo } from 'react';
+import { useParams } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -9,6 +10,7 @@ import {
   Snackbar,
   Fab,
   Tooltip,
+  Button,
 } from '@mui/material';
 import {
   School as SchoolIcon,
@@ -40,17 +42,65 @@ import { useTimetableContext } from '../../../contexts/TimetableContext';
 import { timetableService } from '../../../services/timetableService';
 import TimetableDisplay from './TimetableDisplay';
 
+// Error boundary component
+class GenerateErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: string }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: '' };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error: error.message };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('🔥 GenerateReviewTab Error Boundary caught:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Box sx={{ p: 3, minHeight: '100vh', backgroundColor: '#0a0a0a' }}>
+          <Alert severity="error" sx={{ mb: 2 }}>
+            <Typography variant="h6" sx={{ color: '#d32f2f', fontWeight: 'bold' }}>
+              ❌ Error in Timetable Generation
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#b0b0b0', mt: 1 }}>
+              {this.state.error}
+            </Typography>
+            <Button 
+              onClick={() => window.location.reload()} 
+              sx={{ mt: 2 }}
+              variant="contained"
+              color="error"
+            >
+              Reload Page
+            </Button>
+          </Alert>
+        </Box>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 const GenerateReviewTab: React.FC = () => {
+  // Get timetable ID from URL params (updated after save)
+  const { id: urlTimetableId } = useParams<{ id?: string }>();
+  
   const { 
     formData, 
+    currentTimetable,
     availableCourses, 
     availableFaculty, 
     availableRooms,
     loadCourses,
     loadFaculty,
-    loadRooms,
-    validateCurrentTab,
-    getValidationErrors
+    loadRooms
   } = useTimetableContext();
   
   const [generating, setGenerating] = useState(false);
@@ -67,6 +117,14 @@ const GenerateReviewTab: React.FC = () => {
     conflicts: 0,
     message: ''
   });
+
+  // Watch for currentTimetable changes (after save)
+  useEffect(() => {
+    if (currentTimetable && (currentTimetable.id || currentTimetable._id)) {
+      const newId = currentTimetable.id || currentTimetable._id;
+      console.log('✅ Timetable ID now available in context:', newId);
+    }
+  }, [currentTimetable]);
 
   // Load data when component mounts
   useEffect(() => {
@@ -102,6 +160,20 @@ const GenerateReviewTab: React.FC = () => {
           time_slots: formData.time_slots,
           constraints: formData.constraints
         });
+
+        // Load existing timetable entries if this timetable already has them
+        if (currentTimetable && currentTimetable.entries && currentTimetable.entries.length > 0) {
+          console.log('📊 Existing timetable entries found:', currentTimetable.entries.length);
+          setGenerationResult({
+            _id: currentTimetable.id || currentTimetable._id,
+            title: currentTimetable.title,
+            entries: currentTimetable.entries,
+            success: true,
+            message: 'Existing timetable entries loaded',
+            fitness_score: currentTimetable.fitness_score || 0,
+            conflicts: 0
+          });
+        }
         
       } catch (err) {
         console.error('Error loading data:', err);
@@ -266,79 +338,57 @@ const GenerateReviewTab: React.FC = () => {
     });
   };
 
-  const processGroupsData = () => {
-    return formData.student_groups.map((group, index) => ({
-      name: group.name || `Group ${index + 1}`,
-      students: group.student_strength || 30,
-    }));
-  };
-
-  const processRoomsData = () => {
-    return availableRooms.map(room => ({
-      name: room.name || 'Unknown Room',
-      capacity: room.capacity || 30,
-      type: room.room_type || 'Classroom',
-    }));
-  };
-
-  // Comprehensive data validation
-  const _validateAllData = () => {
-    const errors: string[] = [];
-    
-    // Validate Academic Setup (Tab 0)
-    if (!validateCurrentTab(0)) {
-      errors.push(...getValidationErrors(0));
-    }
-    
-    // Validate Courses (Tab 1)
-    if (!validateCurrentTab(1)) {
-      errors.push(...getValidationErrors(1));
-    }
-    
-    // Validate Faculty (Tab 2)
-    if (!validateCurrentTab(2)) {
-      errors.push(...getValidationErrors(2));
-    }
-    
-    // Validate Student Groups (Tab 3)
-    if (!validateCurrentTab(3)) {
-      errors.push(...getValidationErrors(3));
-    }
-    
-    // Validate Rooms (Tab 4)
-    if (!validateCurrentTab(4)) {
-      errors.push(...getValidationErrors(4));
-    }
-    
-    // Validate Time & Rules (Tab 5)
-    if (!validateCurrentTab(5)) {
-      errors.push(...getValidationErrors(5));
-    }
-    
-    // Additional comprehensive checks
-    if (availableCourses.length === 0) {
-      errors.push('No courses loaded from the database');
-    }
-    
-    if (availableFaculty.length === 0) {
-      errors.push('No faculty loaded from the database');
-    }
-    
-    if (availableRooms.length === 0) {
-      errors.push('No rooms loaded from the database');
-    }
-    
-    return errors;
-  };
-
   const handleGenerateTimetable = async () => {
+    console.log('🔴 [1/10] Generate button clicked');
     setGenerating(true);
+    console.log('🔴 [2/10] setGenerating(true) called');
     setError(null);
     setSuccess(null);
     
-    console.log('🚀 Generating hardcoded timetable (B.Tech CSE AI-ML Fifth Semester)');
+    console.log('🚀 Generating timetable from user-entered data');
+    console.log('📋 Form data:', formData);
 
     try {
+      console.log('🔴 [3/10] In try block');
+      // Get timetable ID from context OR from URL params (URL is updated after save)
+      let timetableId = currentTimetable?.id || (currentTimetable as any)?._id || urlTimetableId;
+      
+      console.log('🔴 [4/10] timetableId:', timetableId);
+      
+      // If no timetable ID, we need to create/save one first
+      if (!timetableId) {
+        console.log('⚠️  No timetable ID found, need to save timetable first');
+        setError('Please save the timetable first. Saving now...');
+        
+        // This should trigger the parent component to save
+        // For now, just inform the user
+        throw new Error('Please save the timetable first before generating. Click the "Save" button above.');
+      }
+
+      console.log('✅ Using timetable ID:', timetableId);
+
+      // Scroll to show the floating button and progress
+      setTimeout(() => {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      }, 100);
+
+      // Collect user-entered data
+      const generationPayload = {
+        method: 'advanced',
+        academic_setup: {
+          formData: formData,
+          courses: formData.courses || [],
+          faculty: formData.faculty || [],
+          rooms: formData.rooms || [],
+          time_slots: formData.time_slots,
+          working_days: formData.working_days,
+          constraints: formData.constraints || {}
+        }
+      };
+
+      console.log('🔴 [5/10] generationPayload created');
+      console.log('📤 Sending generation request with payload:', generationPayload);
+
       // Initialize progress tracking
       setGenerationProgress({
         stage: 'Initializing genetic algorithm...',
@@ -350,34 +400,60 @@ const GenerateReviewTab: React.FC = () => {
         message: 'Preparing data for genetic algorithm'
       });
 
-      // Simulate progress updates during generation
-      const progressInterval = setInterval(() => {
-        setGenerationProgress(prev => {
-          if (prev.generation < prev.maxGenerations) {
-            const newGeneration = prev.generation + 1;
-            const progress = (newGeneration / prev.maxGenerations) * 100;
-            const fitness = Math.min(100, 20 + (progress * 0.8) + Math.random() * 10);
-            const conflicts = Math.max(0, 50 - (progress * 0.5) + Math.random() * 5);
-            
-            return {
-              ...prev,
-              stage: `Running genetic algorithm - Generation ${newGeneration}/${prev.maxGenerations}`,
-              progress: Math.round(progress),
-              generation: newGeneration,
-              fitness: Math.round(fitness * 10) / 10,
-              conflicts: Math.round(conflicts),
-              message: `Evolving timetable solutions... Fitness: ${Math.round(fitness * 10) / 10}%`
-            };
-          }
-          return prev;
-        });
-      }, 200); // Update every 200ms
+      console.log('🔴 [6/10] setGenerationProgress called');
 
-      // Simulate generation time
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Simulate progress updates during generation
+      let progressInterval: ReturnType<typeof setInterval> | null = null;
+      try {
+        progressInterval = setInterval(() => {
+          setGenerationProgress(prev => {
+            if (prev.generation < prev.maxGenerations) {
+              const newGeneration = prev.generation + 1;
+              const progress = (newGeneration / prev.maxGenerations) * 100;
+              const fitness = Math.min(100, 20 + (progress * 0.8) + Math.random() * 10);
+              const conflicts = Math.max(0, 50 - (progress * 0.5) + Math.random() * 5);
+              
+              return {
+                ...prev,
+                stage: `Running genetic algorithm - Generation ${newGeneration}/${prev.maxGenerations}`,
+                progress: Math.round(progress),
+                generation: newGeneration,
+                fitness: Math.round(fitness * 10) / 10,
+                conflicts: Math.round(conflicts),
+                message: `Evolving timetable solutions... Fitness: ${Math.round(fitness * 10) / 10}%`
+              };
+            }
+            return prev;
+          });
+        }, 200);
+      } catch (err) {
+        console.error('🔴 [6.5] Error setting up progress interval:', err);
+      }
+
+      console.log('🔴 [7/10] About to call API');
+
+      // Call the backend to generate with user data
+      const generatedData = await timetableService.generateTimetable(timetableId, generationPayload);
+      
+      console.log('🔴 [8/10] Backend returned:', generatedData);
+      console.log('✅ Backend returned generated timetable:', generatedData);
       
       // Clear progress interval
-      clearInterval(progressInterval);
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
+      console.log('🔴 [9/10] Progress interval cleared');
+      
+      // Check if generation returned valid data
+      if (!generatedData || !generatedData.entries) {
+        throw new Error('Backend returned empty or invalid timetable data. Please ensure all required data is filled in all tabs (Courses, Faculty, Rooms, Student Groups, Time & Rules).');
+      }
+
+      // Warn if entries are empty but backend claims success
+      if (generatedData.entries.length === 0) {
+        console.warn('⚠️ Warning: Backend returned success but with no entries');
+        throw new Error('Timetable generation returned no schedule entries. This may indicate missing data or an internal generation error. Please check that all tabs have valid data.');
+      }
       
       // Final progress update
       setGenerationProgress({
@@ -390,324 +466,37 @@ const GenerateReviewTab: React.FC = () => {
         message: 'Genetic algorithm completed with optimal solution'
       });
 
-      // Hardcoded timetable data matching the image
-      const hardcodedTimetable = {
-        _id: 'hardcoded-timetable-001',
-        title: 'B.Tech CSE AI-ML Fifth Semester Class Routine (Academic Year: 2025-2026)',
-        program_id: 'btech-cse-aiml',
-        semester: 5,
-        academic_year: '2025-2026',
-        entries: [
-          // Tuesday
-          {
-            course_id: 'PCCAIML501A',
-            course_code: 'PCCAIML501A',
-            course_name: 'Probability and Statistics',
-            faculty_id: 'dr-jahangir-chowdhury',
-            faculty_name: 'Dr. Jahangir Chowdhury (9123061550)',
-            room_id: 'theory-classroom-n009',
-            room_name: 'Theory Class Room - N-009',
-            group_id: 'btech-cse-aiml-gr1',
-            group_name: 'B.Tech CSE AI-ML (Gr 1)',
-            time_slot: {
-              day: 'Tuesday',
-              start_time: '10:50',
-              end_time: '11:40',
-              duration_minutes: 50
-            },
-            day: 'Tuesday',
-            start_time: '10:50',
-            end_time: '11:40',
-            session_type: 'Theory'
-          },
-          {            course_id: 'PCCCS502',            course_code: 'PCCCS502',            course_name: 'Operating System',            faculty_id: 'mr-palash-kumar-ghosh',            faculty_name: 'Mr. Palash Kumar Ghosh (8240521803)',            room_id: 'theory-classroom-n009',            room_name: 'Theory Class Room - N-009',            time_slot: {              day: 'Tuesday',              start_time: '1:50',              end_time: '2:40',              duration_minutes: 50            },            day: 'Tuesday',            start_time: '1:50',            end_time: '2:40',            session_type: 'Theory'          },          {            course_id: 'PCCAIML501',            course_code: 'PCCAIML501',            course_name: 'Probability and Statistics',            faculty_id: 'dr-jahangir-chowdhury',            faculty_name: 'Dr. Jahangir Chowdhury (9123061550)',            room_id: 'theory-classroom-n009',            room_name: 'Theory Class Room - N-009',            time_slot: {              day: 'Tuesday',              start_time: '2:40',              end_time: '3:30',              duration_minutes: 50            },            day: 'Tuesday',            start_time: '2:40',            end_time: '3:30',            session_type: 'Theory'          },          {            course_id: 'PCCCS503',            course_code: 'PCCCS503',            course_name: 'Object Oriented Programming',            faculty_id: 'dr-indrajit-pan',            faculty_name: 'Dr. Indrajit Pan (9830570107)',            room_id: 'theory-classroom-n009',            room_name: 'Theory Class Room - N-009',            time_slot: {              day: 'Tuesday',              start_time: '3:30',              end_time: '4:20',              duration_minutes: 50            },            day: 'Tuesday',            start_time: '3:30',            end_time: '4:20',            session_type: 'Theory'          },          {            course_id: 'PCCAIML592',            course_code: 'PCCAIML592',            course_name: 'Machine Learning Lab',            faculty_id: 'mr-sujit-chakraborty',            faculty_name: 'Mr. Sujit Chakraborty (8961727709)',            room_id: 'theory-classroom-n009',            room_name: 'Theory Class Room - N-009',            time_slot: {              day: 'Tuesday',              start_time: '4:20',              end_time: '5:10',              duration_minutes: 50            },            day: 'Tuesday',            start_time: '4:20',            end_time: '5:10',            session_type: 'Lab',            group_type: 'Gr 1',            group_note: '[N017]'          },
-          // Wednesday
-          {
-            course_id: 'PCCCS593',
-            course_code: 'PCCCS593',
-            course_name: 'Object Oriented Programming and Java Lab',
-            faculty_id: 'mr-sujit-chakraborty',
-            faculty_name: 'Mr. Sujit Chakraborty (8961727709)',
-            room_id: 'theory-classroom-n009',
-            room_name: 'Theory Class Room - N-009',
-            time_slot: {
-              day: 'Wednesday',
-              start_time: '10:00',
-              end_time: '10:50',
-              duration_minutes: 50
-            },
-            day: 'Wednesday',
-            start_time: '10:00',
-            end_time: '10:50',
-            session_type: 'Lab',
-            group_type: 'Gr 2',
-            group_note: '[N016]'
-          },
-          {
-            course_id: 'PCCCS503',
-            course_code: 'PCCCS503',
-            course_name: 'Object Oriented Programming',
-            faculty_id: 'dr-indrajit-pan',
-            faculty_name: 'Dr. Indrajit Pan (9830570107)',
-            room_id: 'theory-classroom-n009',
-            room_name: 'Theory Class Room - N-009',
-            time_slot: {
-              day: 'Wednesday',
-              start_time: '1:50',
-              end_time: '2:40',
-              duration_minutes: 50
-            },
-            day: 'Wednesday',
-            start_time: '1:50',
-            end_time: '2:40',
-            session_type: 'Theory'
-          },
-          {
-            course_id: 'PCCCS502',
-            course_code: 'PCCCS502',
-            course_name: 'Operating System',
-            faculty_id: 'mr-palash-kumar-ghosh',
-            faculty_name: 'Mr. Palash Kumar Ghosh (8240521803)',
-            room_id: 'theory-classroom-n009',
-            room_name: 'Theory Class Room - N-009',
-            time_slot: {
-              day: 'Wednesday',
-              start_time: '2:40',
-              end_time: '3:30',
-              duration_minutes: 50
-            },
-            day: 'Wednesday',
-            start_time: '2:40',
-            end_time: '3:30',
-            session_type: 'Theory'
-          },
-          {
-            course_id: 'PCCCS592',
-            course_code: 'PCCCS592',
-            course_name: 'Operating System Lab',
-            faculty_id: 'mr-palash-kumar-ghosh',
-            faculty_name: 'Mr. Palash Kumar Ghosh (8240521803)',
-            room_id: 'theory-classroom-n009',
-            room_name: 'Theory Class Room - N-009',
-            time_slot: {
-              day: 'Wednesday',
-              start_time: '3:30',
-              end_time: '4:20',
-              duration_minutes: 50
-            },
-            day: 'Wednesday',
-            start_time: '3:30',
-            end_time: '4:20',
-            session_type: 'Lab',
-            group_type: 'Gr 2',
-            group_note: '[N017]'
-          },
-          {
-            course_id: 'PCCCS593',
-            course_code: 'PCCCS593',
-            course_name: 'Object Oriented Programming and Java Lab',
-            faculty_id: 'mr-sujit-chakraborty',
-            faculty_name: 'Mr. Sujit Chakraborty (8961727709)',
-            room_id: 'theory-classroom-n009',
-            room_name: 'Theory Class Room - N-009',
-            time_slot: {
-              day: 'Wednesday',
-              start_time: '4:20',
-              end_time: '5:10',
-              duration_minutes: 50
-            },
-            day: 'Wednesday',
-            start_time: '4:20',
-            end_time: '5:10',
-            session_type: 'Lab',
-            group_type: 'Gr 1',
-            group_note: '[N016]'
-          },
-          // Thursday
-          {
-            course_id: 'PCCAIML501',
-            course_code: 'PCCAIML501',
-            course_name: 'Probability and Statistics',
-            faculty_id: 'dr-jahangir-chowdhury',
-            faculty_name: 'Dr. Jahangir Chowdhury (9123061550)',
-            room_id: 'theory-classroom-n009',
-            room_name: 'Theory Class Room - N-009',
-            time_slot: {
-              day: 'Thursday',
-              start_time: '10:50',
-              end_time: '11:40',
-              duration_minutes: 50
-            },
-            day: 'Thursday',
-            start_time: '10:50',
-            end_time: '11:40',
-            session_type: 'Theory'
-          },
-          {
-            course_id: 'PCCCS502',
-            course_code: 'PCCCS502',
-            course_name: 'Operating System',
-            faculty_id: 'mr-palash-kumar-ghosh',
-            faculty_name: 'Mr. Palash Kumar Ghosh (8240521803)',
-            room_id: 'theory-classroom-n009',
-            room_name: 'Theory Class Room - N-009',
-            time_slot: {
-              day: 'Thursday',
-              start_time: '1:00',
-              end_time: '1:50',
-              duration_minutes: 50
-            },
-            day: 'Thursday',
-            start_time: '1:00',
-            end_time: '1:50',
-            session_type: 'Theory'
-          },
-          {
-            course_id: 'PCCAIML502',
-            course_code: 'PCCAIML502',
-            course_name: 'Introduction to Machine Learning',
-            faculty_id: 'dr-indrajit-pan',
-            faculty_name: 'Dr. Indrajit Pan (9830570107)',
-            room_id: 'theory-classroom-n009',
-            room_name: 'Theory Class Room - N-009',
-            time_slot: {
-              day: 'Thursday',
-              start_time: '1:50',
-              end_time: '2:40',
-              duration_minutes: 50
-            },
-            day: 'Thursday',
-            start_time: '1:50',
-            end_time: '2:40',
-            session_type: 'Theory'
-          },
-          {
-            course_id: 'HSMC501',
-            course_code: 'HSMC501',
-            course_name: 'Introduction to Industrial Management',
-            faculty_id: 'mr-sourav-sil',
-            faculty_name: 'Mr. Sourav Sil (8509320886)',
-            room_id: 'theory-classroom-n009',
-            room_name: 'Theory Class Room - N-009',
-            time_slot: {
-              day: 'Thursday',
-              start_time: '2:40',
-              end_time: '3:30',
-              duration_minutes: 50
-            },
-            day: 'Thursday',
-            start_time: '2:40',
-            end_time: '3:30',
-            session_type: 'Theory'
-          },
-          // Friday
-          {
-            course_id: 'PCCCS592',
-            course_code: 'PCCCS592',
-            course_name: 'Operating System Lab',
-            faculty_id: 'mr-palash-kumar-ghosh',
-            faculty_name: 'Mr. Palash Kumar Ghosh (8240521803)',
-            room_id: 'theory-classroom-n009',
-            room_name: 'Theory Class Room - N-009',
-            time_slot: {
-              day: 'Friday',
-              start_time: '10:00',
-              end_time: '10:50',
-              duration_minutes: 50
-            },
-            day: 'Friday',
-            start_time: '10:00',
-            end_time: '10:50',
-            session_type: 'Lab',
-            group_type: 'Gr 1',
-            group_note: '[N016]'
-          },
-          {
-            course_id: 'PCCAIML592',
-            course_code: 'PCCAIML592',
-            course_name: 'Machine Learning Lab',
-            faculty_id: 'mr-sujit-chakraborty',
-            faculty_name: 'Mr. Sujit Chakraborty (8961727709)',
-            room_id: 'theory-classroom-n009',
-            room_name: 'Theory Class Room - N-009',
-            time_slot: {
-              day: 'Friday',
-              start_time: '10:50',
-              end_time: '11:40',
-              duration_minutes: 50
-            },
-            day: 'Friday',
-            start_time: '10:50',
-            end_time: '11:40',
-            session_type: 'Lab',
-            group_type: 'Gr 2',
-            group_note: '[N017]'
-          },
-          {
-            course_id: 'PCCAIML502',
-            course_code: 'PCCAIML502',
-            course_name: 'Introduction to Machine Learning',
-            faculty_id: 'dr-indrajit-pan',
-            faculty_name: 'Dr. Indrajit Pan (9830570107)',
-            room_id: 'theory-classroom-n009',
-            room_name: 'Theory Class Room - N-009',
-            time_slot: {
-              day: 'Friday',
-              start_time: '1:50',
-              end_time: '2:40',
-              duration_minutes: 50
-            },
-            day: 'Friday',
-            start_time: '1:50',
-            end_time: '2:40',
-            session_type: 'Theory'
-          },
-          {
-            course_id: 'PECAIML501A',
-            course_code: 'PECAIML501A',
-            course_name: 'Cloud Computing',
-            faculty_id: 'mr-sudarsan-biswas',
-            faculty_name: 'Mr. Sudarsan Biswas (9432843348)',
-            room_id: 'theory-classroom-n009',
-            room_name: 'Theory Class Room - N-009',
-            time_slot: {
-              day: 'Friday',
-              start_time: '2:40',
-              end_time: '3:30',
-              duration_minutes: 50
-            },
-            day: 'Friday',
-            start_time: '2:40',
-            end_time: '3:30',
-            session_type: 'Theory'
-          }
-        ],
-        courses: [
-          { code: 'PCCAIML501', name: 'Probability and Statistics', credits: 3, faculty_name: 'Dr. Jahangir Chowdhury (9123061550)' },
-          { code: 'PCCCS502', name: 'Operating System', credits: 3, faculty_name: 'Mr. Palash Kumar Ghosh (8240521803)' },
-          { code: 'PCCCS503', name: 'Object Oriented Programming', credits: 3, faculty_name: 'Dr. Indrajit Pan (9830570107)' },
-          { code: 'PCCAIML502', name: 'Introduction to Machine Learning', credits: 3, faculty_name: 'Dr. Indrajit Pan (9830570107)' },
-          { code: 'HSMC501', name: 'Introduction to Industrial Management', credits: 2, faculty_name: 'Mr. Sourav Sil (8509320886)' },
-          { code: 'PECAIML501A', name: 'Cloud Computing', credits: 3, faculty_name: 'Mr. Sudarsan Biswas (9432843348)' },
-          { code: 'PCCCS592', name: 'Operating System Lab', credits: 3, faculty_name: 'Mr. Palash Kumar Ghosh (8240521803)' },
-          { code: 'PCCCS593', name: 'Object Oriented Programming and Java Lab', credits: 3, faculty_name: 'Mr. Sujit Chakraborty (8961727709)' },
-          { code: 'PCCAIML592', name: 'Machine Learning Lab', credits: 3, faculty_name: 'Mr. Sujit Chakraborty (8961727709)' }
-        ],
+      // Use the real generated data from the backend
+      const resultTimetable = {
+        _id: timetableId,
+        title: generatedData.title || 'Generated Timetable',
+        entries: generatedData.entries || [],
         success: true,
-        message: 'Hardcoded timetable generated successfully',
-        fitness_score: 97.5,
+        message: 'Timetable generated successfully from user-entered data',
+        fitness_score: generatedData.score || 0,
         conflicts: 0,
         generation_count: 100
       };
 
-      console.log('✅ Hardcoded timetable generated:', hardcodedTimetable);
-      setGenerationResult(hardcodedTimetable);
-      setSuccess('🧬 Genetic Algorithm Timetable generated successfully! The AI has evolved an optimal solution with minimal conflicts.');
+      console.log('✅ Timetable generated from user data:', resultTimetable);
+      console.log('🔴 [10/10] About to set generation result');
+      setGenerationResult(resultTimetable);
+
+      console.log('🔴 [10.5/10] Generation result set, about to set success message');
+      
+      setSuccess(`✅ Timetable generated successfully! Generated ${resultTimetable.entries.length} schedule entries.`);
+      console.log('🔴 [10.9/10] Success message set');
       
     } catch (err: any) {
       console.error('❌ Timetable generation failed:', err);
-      setError('Failed to generate hardcoded timetable');
+      console.log('🔴 Error details:', {
+        message: err.message,
+        stack: err.stack,
+        name: err.name
+      });
+      setError(`Failed to generate timetable: ${err.message || 'Unknown error'}`);
     } finally {
+      console.log('🔴 [Finally] Setting generating to false');
       setGenerating(false);
     }
   };
@@ -745,8 +534,9 @@ const GenerateReviewTab: React.FC = () => {
         display: 'flex', 
         justifyContent: 'center', 
         alignItems: 'center', 
-        minHeight: '50vh',
-        backgroundColor: '#0a0a0a'
+        minHeight: 'calc(100vh - 100px)',
+        backgroundColor: '#0a0a0a',
+        width: '100%'
       }}>
         <CircularProgress size={60} sx={{ color: '#2196f3' }} />
         <Typography variant="h6" sx={{ color: 'white', ml: 2 }}>
@@ -757,11 +547,60 @@ const GenerateReviewTab: React.FC = () => {
   }
 
   return (
-    <Box sx={{ p: 3, minHeight: '100vh', backgroundColor: '#0a0a0a' }}>
-      {/* Header */}
-      <Typography variant="h4" sx={{ color: 'white', mb: 3, fontWeight: 'bold' }}>
-        🧬 Generate Genetic Algorithm Timetable
-      </Typography>
+    <>
+      {/* Status Indicator - Always Visible */}
+      {generating && (
+        <Box sx={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          backgroundColor: '#1976d2',
+          color: 'white',
+          padding: '12px 20px',
+          zIndex: 9999,
+          textAlign: 'center',
+          fontWeight: 'bold',
+          fontSize: '16px'
+        }}>
+          🚀 Timetable Generation in Progress... {generationProgress.progress}%
+        </Box>
+      )}
+      
+      <Box sx={{ p: 3, minHeight: '100vh', backgroundColor: '#0a0a0a', width: '100%', marginTop: generating ? '48px' : '0px' }}>
+        <Box sx={{ minHeight: '100%', width: '100%' }}>
+        {/* Header */}
+        <Typography variant="h4" sx={{ color: 'white', mb: 3, fontWeight: 'bold' }}>
+          🧬 Generate Genetic Algorithm Timetable
+        </Typography>
+
+      {/* Getting Started Guide */}
+      <Card sx={{ 
+        background: 'linear-gradient(135deg, rgba(33, 150, 243, 0.1) 0%, rgba(66, 165, 245, 0.05) 100%)',
+        border: '2px solid #2196F3',
+        borderRadius: 3,
+        mb: 4 
+      }}>
+        <CardContent>
+          <Typography variant="h6" sx={{ color: '#64B5F6', mb: 2, display: 'flex', alignItems: 'center' }}>
+            📋 Getting Started
+          </Typography>
+          <Typography sx={{ color: '#b0b0b0', mb: 1 }}>
+            To generate a timetable, please fill in the following information in the tabs above:
+          </Typography>
+          <Box component="ul" sx={{ color: '#b0b0b0', pl: 2 }}>
+            <li>Academic Structure: Select program, semester, and academic year</li>
+            <li>Courses: Add courses with their details</li>
+            <li>Faculty: Add faculty members and their availability</li>
+            <li>Student Groups: Define student groups</li>
+            <li>Rooms: Add available classrooms and labs</li>
+            <li>Time & Rules: Configure working days, time slots, and constraints</li>
+          </Box>
+          <Typography variant="caption" sx={{ color: '#888', mt: 2, display: 'block' }}>
+            Once all tabs are filled, click the "Generate" button below to create an optimized timetable using AI.
+          </Typography>
+        </CardContent>
+      </Card>
 
       {/* Data Summary Section */}
       <Card sx={{ 
@@ -908,31 +747,10 @@ const GenerateReviewTab: React.FC = () => {
 
       {/* Timetable Display - Moved to top */}
       {generationResult && (
-        <>
-          {/* Debug Information */}
-          <Card sx={{ 
-            background: 'linear-gradient(135deg, rgba(30,30,30,0.95) 0%, rgba(18,18,18,0.95) 100%)',
-            border: '1px solid #333', 
-            mb: 2,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-            borderRadius: 3
-          }}>
-            <CardContent>
-              <Typography variant="h6" sx={{ color: 'white', mb: 2 }}>🔍 Debug Information</Typography>
-              <Typography variant="body2" sx={{ color: '#ccc', fontFamily: 'monospace' }}>
-                Response Keys: {JSON.stringify(Object.keys(generationResult || {}))}<br/>
-                Has Entries: {!!generationResult?.entries ? 'Yes' : 'No'}<br/>
-                Entries Count: {generationResult?.entries?.length || 0}<br/>
-                Sample Entry: {generationResult?.entries?.[0] ? JSON.stringify(generationResult.entries[0], null, 2) : 'None'}
-              </Typography>
-            </CardContent>
-          </Card>
-          
-          <TimetableDisplay 
-            timetableData={generationResult} 
-            onExport={handleExport}
-          />
-        </>
+        <TimetableDisplay 
+          timetableData={generationResult} 
+          onExport={handleExport}
+        />
       )}
 
       {/* Summary Cards */}
@@ -1115,7 +933,7 @@ const GenerateReviewTab: React.FC = () => {
                     <PolarRadiusAxis stroke="#b0b0b0" />
                     <RechartsTooltip 
                       contentStyle={{ backgroundColor: '#2a2a2a', border: '1px solid #444' }}
-                      formatter={(value: any, name: any, props: any) => {
+                      formatter={(value: any, name: any) => {
                         const item = courseCreditsData.find(d => d.count === value);
                         return [
                           `${value} courses\nCodes: ${item?.codes || 'N/A'}`,
@@ -1163,7 +981,7 @@ const GenerateReviewTab: React.FC = () => {
                     <YAxis stroke="#b0b0b0" />
                     <RechartsTooltip 
                       contentStyle={{ backgroundColor: '#2a2a2a', border: '1px solid #444' }}
-                      formatter={(value: any, name: any, props: any) => {
+                      formatter={(value: any) => {
                         return [
                           `${value} hours`,
                           'Total Course Hours'
@@ -1297,6 +1115,61 @@ const GenerateReviewTab: React.FC = () => {
         </Card>
       )}
 
+      {/* Display Generated Timetable or Empty State */}
+      {generationResult && (
+        <>
+          {generationResult.entries && generationResult.entries.length > 0 ? (
+            <Box sx={{ mt: 4 }}>
+              <TimetableDisplay 
+                timetableData={generationResult}
+                onExport={(format) => handleExport(format)}
+              />
+            </Box>
+          ) : (
+            <Card sx={{ 
+              background: 'linear-gradient(135deg, rgba(30,30,30,0.95) 0%, rgba(18,18,18,0.95) 100%)',
+              border: '2px dashed #ff9800', 
+              mt: 4,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+              borderRadius: 3
+            }}>
+              <CardContent sx={{ textAlign: 'center', py: 5 }}>
+                <Typography variant="h6" sx={{ color: '#ff9800', mb: 2, fontWeight: 'bold' }}>
+                  ⚠️ No Schedule Generated
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 2 }}>
+                  The generation completed but returned no schedule entries.
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 2 }}>
+                  This usually means some required data is missing or incomplete.
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#888', display: 'block', mb: 1 }}>
+                  ✓ Please verify you have filled in ALL tabs:
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#888', display: 'block', mb: 1 }}>
+                  • Academic Setup (Program, Semester, Year, Department)
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#888', display: 'block', mb: 1 }}>
+                  • Courses (At least 1 course with hours, type, and credits)
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#888', display: 'block', mb: 1 }}>
+                  • Faculty (At least 1 faculty member with availability)
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#888', display: 'block', mb: 1 }}>
+                  • Student Groups (At least 1 student group)
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#888', display: 'block', mb: 1 }}>
+                  • Rooms (At least 1 room for courses)
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#888', display: 'block' }}>
+                  • Time & Rules (Working days and time slots configured)
+                </Typography>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
       {/* AI Generate Floating Action Button */}
       <Tooltip title="🧬 Generate Timetable with Genetic Algorithm" placement="left">
         <Fab
@@ -1352,8 +1225,19 @@ const GenerateReviewTab: React.FC = () => {
           {success}
         </Alert>
       </Snackbar>
-    </Box>
+        </Box>
+      </Box>
+    </>
   );
 };
 
-export default GenerateReviewTab;
+// Wrap with error boundary
+const GenerateReviewTabWithErrorBoundary: React.FC = () => {
+  return (
+    <GenerateErrorBoundary>
+      <GenerateReviewTab />
+    </GenerateErrorBoundary>
+  );
+};
+
+export default GenerateReviewTabWithErrorBoundary;

@@ -28,6 +28,12 @@ class TimetableCreate(BaseModel):
     program_id: str
     semester: int
     academic_year: str
+    is_draft: Optional[bool] = True
+    metadata: Optional[dict] = None
+    entries: Optional[List[TimetableEntry]] = []
+    
+    class Config:
+        extra = "allow"  # Allow extra fields from frontend
 
 
 class Timetable(TimetableBase, MongoBaseModel):
@@ -43,3 +49,6 @@ class Timetable(TimetableBase, MongoBaseModel):
     metadata: Optional[dict] = None
     optimization_score: Optional[int] = None
     department_code: Optional[str] = None  # Department code for filtering
+    
+    class Config:
+        extra = "allow"  # Allow additional fields like constraints

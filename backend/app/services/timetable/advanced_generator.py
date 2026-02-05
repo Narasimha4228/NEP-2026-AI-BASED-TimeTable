@@ -421,7 +421,7 @@ class AdvancedTimetableGenerator:
                 print(f"    Slot {time_slot}: Room {room_id} conflict with {occupied_slot}")
                 return False
         
-        # Check faculty availability
+        # Check faculty availability (time overlap only)
         for occupied_slot in self.faculty_occupancy[faculty_id]:
             if time_slot.overlaps(occupied_slot):
                 print(f"    Slot {time_slot}: Faculty {faculty_id} conflict with {occupied_slot}")
@@ -444,36 +444,51 @@ class AdvancedTimetableGenerator:
         self.group_occupancy[group_id].append(time_slot)
     
     def find_suitable_faculty(self, course_code: str) -> Optional[str]:
-        """Find a faculty member who can teach the course"""
+        """Find a faculty member who can teach the course, preferring less-loaded faculty"""
+        suitable_faculty = []
+        
         # First try exact course code match
         for faculty in self.faculty:
             if course_code in faculty.subjects:
-                return faculty.id
+                suitable_faculty.append(faculty)
         
-        # Then try course name match (for courses loaded from database)
-        course_name = None
-        for course in self.courses:
-            if course.code == course_code:
-                course_name = course.name
-                break
+        # Then try course name match if no exact match (for courses loaded from database)
+        if not suitable_faculty:
+            course_name = None
+            for course in self.courses:
+                if course.code == course_code:
+                    course_name = course.name
+                    break
+            
+            if course_name:
+                for faculty in self.faculty:
+                    if course_name in faculty.subjects:
+                        suitable_faculty.append(faculty)
         
-        if course_name:
+        # Try to find general faculty if no specific match
+        if not suitable_faculty:
             for faculty in self.faculty:
-                if course_name in faculty.subjects:
-                    return faculty.id
+                if "GENERAL" in faculty.subjects:
+                    suitable_faculty.append(faculty)
         
-        # Try to find general faculty (marked with "GENERAL")
-        for faculty in self.faculty:
-            if "GENERAL" in faculty.subjects:
-                print(f"[INFO] Assigning general faculty {faculty.name} to {course_code}")
-                return faculty.id
+        # If no suitable faculty found, use any available
+        if not suitable_faculty and self.faculty:
+            suitable_faculty = self.faculty
         
-        # Fallback: assign any available faculty
-        if self.faculty:
-            print(f"[WARNING] No specific faculty found for {course_code}, assigning {self.faculty[0].name}")
-            return self.faculty[0].id
+        if not suitable_faculty:
+            return None
         
-        return None
+        # Prefer less-loaded faculty (better load balancing)
+        faculty_loads = {}
+        for fac in suitable_faculty:
+            load = len(self.faculty_occupancy.get(fac.id, []))
+            faculty_loads[fac.id] = load
+        
+        # Return faculty with minimum load
+        best_faculty_id = min(faculty_loads, key=faculty_loads.get)
+        best_faculty = next(f for f in suitable_faculty if f.id == best_faculty_id)
+        
+        return best_faculty.id
     
     def find_suitable_room(self, group_size: int, is_lab: bool, time_slot: TimeSlot = None) -> Optional[str]:
         """Find a suitable room for the session"""
@@ -588,6 +603,10 @@ class AdvancedTimetableGenerator:
                     if not self.check_daily_constraints(subgroup.id, slot.day, slot):
                         continue
                     
+                    # CRITICAL: Prevent lab scheduling same course multiple times on same day
+                    if self.has_course_on_day(course.code, subgroup.id, slot.day):
+                        continue
+                    
                     # Find suitable faculty and room
                     faculty_id = self.find_suitable_faculty(course.code)
                     room_id = self.find_suitable_room(subgroup.size, True, slot)
@@ -663,12 +682,10 @@ class AdvancedTimetableGenerator:
                     # if not continuous_ok:
                     #     continue
                     
-                    # Check for course repetition on same day (allow multiple sessions for heavy courses)
-                    # Only restrict same-day scheduling for courses with <= 2 hours per week
-                    if (session_duration < 100 and 
-                        course.hours_per_week <= 2 and  # Only restrict for very light courses
-                        self.has_course_on_day(course.code, main_group.id, slot.day)):
-                        print(f"    Slot {slot}: Course already scheduled on {slot.day}")
+                    # CRITICAL: Prevent scheduling same course multiple times on same day
+                    # Each course session should be on a DIFFERENT day (spread across week)
+                    if self.has_course_on_day(course.code, main_group.id, slot.day):
+                        print(f"    Slot {slot}: Course {course.code} already scheduled on {slot.day}")
                         continue
                     
                     # Find resources
@@ -787,54 +804,49 @@ class AdvancedTimetableGenerator:
                   for entry in self.schedule)
     
     def calculate_schedule_score(self) -> int:
-        """Calculate overall schedule score based on soft constraints"""
+        """Calculate overall schedule score based on soft constraints and optimization metrics"""
         score = 0
+        weights = {
+            'lab_time': 15,           # Afternoon labs bonus
+            'heavy_course_spread': 20, # Spread heavy theory courses across days
+            'daily_balance': 15,      # Balance daily load
+            'consecutive': 8,         # Prefer consecutive slots (no gaps)
+            'faculty_balance': 12,    # Balance faculty load
+            'room_utilization': 10,   # Prefer higher room utilization
+            'time_preferences': 12    # Respect course time preferences
+        }
         
         # Group sessions by day and group for analysis
         daily_sessions = {}
+        faculty_daily = {}
+        room_usage = {}
+        
         for entry in self.schedule:
             key = (entry.group_id, entry.time_slot.day)
             if key not in daily_sessions:
                 daily_sessions[key] = []
             daily_sessions[key].append(entry)
+            
+            # Track faculty daily load
+            fac_key = (entry.faculty_id, entry.time_slot.day)
+            if fac_key not in faculty_daily:
+                faculty_daily[fac_key] = []
+            faculty_daily[fac_key].append(entry)
+            
+            # Track room usage
+            if entry.room_id not in room_usage:
+                room_usage[entry.room_id] = 0
+            room_usage[entry.room_id] += 1
         
-        # Score based on various soft constraints
+        # 1. Prefer afternoon labs (13:20-16:30)
         for entry in self.schedule:
-            # Prefer afternoon labs (13:20-16:30)
             if entry.is_lab:
                 if t2min("13:20") <= entry.time_slot.start_min <= t2min("16:30"):
-                    score += 10
-                else:
-                    score -= 5
-            
-            # Penalize early electives/minor courses (08:00 slot)
-            if (entry.course_code in ["CLOUD_COMP", "OPT_TECH"] and 
-                entry.time_slot.start_min == t2min("08:00")):
-                score -= 15
-            
-            # Reward mid-day Industrial Management
-            if entry.course_code == "IND_MGMT":
-                if t2min("10:00") <= entry.time_slot.start_min <= t2min("15:00"):
-                    score += 10
-                else:
-                    score -= 5
-            
-            # Prefer 2-period blocks for OS, OOP, ML
-            if (entry.course_code in ["OS_THEORY", "OOP_THEORY", "ML_THEORY"] and 
-                entry.time_slot.duration == 100):  # Double period
-                score += 8
+                    score += weights['lab_time']
+                elif entry.time_slot.start_min < t2min("13:20"):
+                    score -= weights['lab_time'] // 2
         
-        # Check daily load balance (7-9 periods preferred)
-        for (group_id, day), sessions in daily_sessions.items():
-            daily_count = len(sessions)
-            if 7 <= daily_count <= 9:
-                score += 10
-            elif daily_count < 7:
-                score += 5
-            else:
-                score -= 10
-        
-        # Check heavy theory distribution across days
+        # 2. Reward heavy theory course distribution across days
         heavy_courses = ["OS_THEORY", "OOP_THEORY", "ML_THEORY"]
         for course in heavy_courses:
             course_days = set()
@@ -843,35 +855,84 @@ class AdvancedTimetableGenerator:
                     course_days.add(entry.time_slot.day)
             
             # Reward spreading across different days
-            if len(course_days) >= 3:
-                score += 15
-            elif len(course_days) == 2:
-                score += 8
-            else:
-                score -= 10
+            spread_bonus = (len(course_days) / 5) * weights['heavy_course_spread']
+            score += int(spread_bonus)
         
-        # Check for back-to-back Cloud + Optimization
-        cloud_sessions = [e for e in self.schedule if e.course_code == "CLOUD_COMP"]
-        opt_sessions = [e for e in self.schedule if e.course_code == "OPT_TECH"]
+        # 2.5 PENALTY: Avoid packing same course multiple times on single day
+        course_daily = {}
+        for entry in self.schedule:
+            key = (entry.course_code, entry.time_slot.day)
+            if key not in course_daily:
+                course_daily[key] = []
+            course_daily[key].append(entry)
         
-        for cloud in cloud_sessions:
-            for opt in opt_sessions:
-                if (cloud.group_id == opt.group_id and 
-                    cloud.time_slot.day == opt.time_slot.day):
-                    time_diff = abs(cloud.time_slot.start_min - opt.time_slot.start_min)
-                    if time_diff <= 60:  # Within one period
-                        score -= 20
+        for (course_code, day), entries in course_daily.items():
+            if len(entries) > 2:  # Allow theory + lab, but penalize >2 sessions same course same day
+                excess = len(entries) - 2
+                score -= excess * 15  # Penalize each excess session heavily
         
-        # Minimize idle gaps
+        # 3. Check daily load balance (7-9 periods preferred, max 10)
+        for (group_id, day), sessions in daily_sessions.items():
+            daily_count = len(sessions)
+            if 7 <= daily_count <= 9:
+                score += weights['daily_balance']
+            elif daily_count == 10:
+                score += weights['daily_balance'] // 2
+            elif daily_count < 5:
+                score -= weights['daily_balance'] // 2  # Too light day
+        
+        # 4. Check for consecutive slots (minimal gaps)
         for (group_id, day), sessions in daily_sessions.items():
             if len(sessions) > 1:
                 sorted_sessions = sorted(sessions, key=lambda x: x.time_slot.start_min)
+                gap_count = 0
                 for i in range(len(sorted_sessions) - 1):
                     gap = sorted_sessions[i+1].time_slot.start_min - sorted_sessions[i].time_slot.end_min
-                    if gap > 60:  # Gap larger than one period
-                        score -= 5
-                    elif gap <= 10:  # Consecutive or minimal gap
-                        score += 3
+                    if gap <= 10:  # Consecutive or minimal gap
+                        score += 2
+                    elif gap > 60:  # Large gap - penalize
+                        gap_count += 1
+                
+                # Penalize multiple gaps in a day
+                if gap_count > 0:
+                    score -= gap_count * 2
+        
+        # 5. Faculty workload balance
+        for (fac_id, day), sessions in faculty_daily.items():
+            # Track faculty daily load (for fairness in distribution)
+            session_count = len(sessions)
+            if 1 <= session_count <= 3:
+                score += weights['faculty_balance'] // 2  # Fair distribution
+            elif session_count > 4:
+                score -= weights['faculty_balance'] // 2  # Too heavy single day
+        
+        # 6. Prefer IND_MGMT mid-day (10:00-15:00)
+        for entry in self.schedule:
+            if entry.course_code == "IND_MGMT":
+                if t2min("10:00") <= entry.time_slot.start_min <= t2min("15:00"):
+                    score += 8
+        
+        # 7. Penalize back-to-back Cloud + Optimization on same day
+        cloud_sessions = {(e.group_id, e.time_slot.day): e for e in self.schedule 
+                         if e.course_code == "CLOUD_COMP"}
+        opt_sessions = {(e.group_id, e.time_slot.day): e for e in self.schedule 
+                       if e.course_code == "OPT_TECH"}
+        
+        for key in cloud_sessions:
+            if key in opt_sessions:
+                time_diff = abs(cloud_sessions[key].time_slot.start_min - 
+                              opt_sessions[key].time_slot.start_min)
+                if time_diff <= 60:  # Within one period
+                    score -= 15
+        
+        # 8. Room utilization (prefer using fewer rooms more efficiently)
+        if room_usage:
+            avg_usage = sum(room_usage.values()) / len(room_usage)
+            for usage in room_usage.values():
+                if usage > avg_usage:
+                    score += 2
+        
+        return score
         
         return score
     
@@ -913,6 +974,21 @@ class AdvancedTimetableGenerator:
         if academic_setup:
             self.rules = await SchedulingRules.from_database_with_setup(program_id, academic_setup)
             print(f"[SETUP] Applied academic setup constraints to timetable generator")
+            
+            # Override faculty if user-provided faculty in academic_setup
+            user_faculty = academic_setup.get("faculty", [])
+            if user_faculty and len(user_faculty) > 0:
+                print(f"[SETUP] Overriding {len(self.faculty)} database faculty with {len(user_faculty)} user-provided faculty")
+                self.faculty = []
+                for fac in user_faculty:
+                    # Create Faculty object from user-provided data
+                    fac_obj = Faculty(
+                        id=fac.get("id") or fac.get("_id") or f"user_fac_{len(self.faculty)}",
+                        name=fac.get("name", ""),
+                        subjects=fac.get("subjects", ["GENERAL"])  # Default to GENERAL if no subjects provided
+                    )
+                    self.faculty.append(fac_obj)
+                print(f"[SETUP] Loaded user faculty: {[f.name for f in self.faculty]}")
     
     async def _process_database_data(self, courses_raw, groups_raw, rooms_raw, faculty_raw):
         """Process raw database data into internal format"""
@@ -1053,34 +1129,45 @@ class AdvancedTimetableGenerator:
             self.setup_groups_and_resources()
         
         print("Starting AI timetable generation with hard and soft constraints...")
+        print(f"📊 Using {len(self.courses)} courses, {len(self.rooms)} rooms, {len(self.faculty)} faculty")
         
         best_schedule = None
         best_score = float('-inf')
         best_validation = None
         best_statistics = None
-        attempts = 5  # Try multiple times to find the best arrangement
+        attempts = 15  # Increased from 5 to 15 for better optimization
+        successful_attempts = 0
         
         for attempt in range(attempts):
-            print(f"\nAttempt {attempt + 1}/{attempts}...")
+            print(f"\n🔄 Attempt {attempt + 1}/{attempts}...")
             
             # Reset for each attempt
             self.initialize_occupancy_tracking()
             self.schedule = []
             
             try:
+                # Add randomization by shuffling course order every 3 attempts
+                # This helps explore different solution spaces
+                if attempt % 3 == 0 and attempt > 0:
+                    import random as rand
+                    rand.shuffle(self.courses)
+                    print("  → Shuffled course order for diversity")
+                
                 # Step 1: Schedule labs first (they have stricter constraints)
                 if not self.schedule_labs_first():
-                    print(f"Attempt {attempt + 1}: Failed to schedule lab sessions")
+                    print(f"  ❌ Failed to schedule lab sessions")
                     continue
                 
-                print(f"Scheduled {len([e for e in self.schedule if e.is_lab])} lab sessions")
+                lab_count = len([e for e in self.schedule if e.is_lab])
+                print(f"  ✓ Scheduled {lab_count} lab sessions")
                 
                 # Step 2: Schedule theory sessions
                 if not self.schedule_theory_sessions():
-                    print(f"Attempt {attempt + 1}: Failed to schedule theory sessions")
+                    print(f"  ❌ Failed to schedule theory sessions")
                     continue
                 
-                print(f"Scheduled {len([e for e in self.schedule if not e.is_lab])} theory sessions")
+                theory_count = len([e for e in self.schedule if not e.is_lab])
+                print(f"  ✓ Scheduled {theory_count} theory sessions")
                 
                 # Step 3: Validate the schedule
                 validation_result = self.validate_schedule()
@@ -1090,12 +1177,18 @@ class AdvancedTimetableGenerator:
                                   if "Overlap detected" in error]
                 
                 if critical_errors:
-                    print(f"Attempt {attempt + 1}: Critical validation errors: {critical_errors}")
+                    print(f"  ❌ Critical validation errors: {len(critical_errors)}")
                     continue
                 
-                # Step 4: Calculate score
+                # Step 4: Calculate score with enhanced metrics
                 score = self.calculate_schedule_score()
-                print(f"Attempt {attempt + 1}: Score = {score}")
+                successful_attempts += 1
+                print(f"  📈 Score = {score}")
+                
+                # Show validation warnings (not failures)
+                warnings = [w for w in validation_result.get("warnings", []) if w]
+                if warnings:
+                    print(f"  ⚠️  Warnings: {len(warnings)}")
                 
                 # Keep the best scoring arrangement
                 if score > best_score:
@@ -1103,17 +1196,19 @@ class AdvancedTimetableGenerator:
                     best_schedule = deepcopy(self.schedule)
                     best_validation = validation_result
                     best_statistics = self.get_schedule_statistics()
-                    print(f"New best score: {best_score}")
+                    print(f"  🏆 New best score: {best_score}")
                 
             except Exception as e:
-                print(f"Attempt {attempt + 1}: Exception occurred: {str(e)}")
+                print(f"  ❌ Exception: {str(e)}")
                 continue
         
         # Return the best result found
         if best_schedule is None:
             return {
                 "success": False, 
-                "error": "Failed to generate a valid timetable after all attempts. Please check constraints."
+                "error": f"Failed to generate a valid timetable after {attempts} attempts. Please check constraints.",
+                "attempts_made": attempts,
+                "successful_attempts": successful_attempts
             }
         
         # Restore the best schedule for output formatting
@@ -1156,6 +1251,19 @@ class AdvancedTimetableGenerator:
                     errors.append(f"{course.code}: No sessions scheduled (expected {course.hours_per_week}h/week)")
                 else:
                     warnings.append(f"{course.code}: Expected {course.hours_per_week}h/week, got {scheduled_hours}h/week")
+        
+        # Check that same course is not packed on single day (spread across different days)
+        course_daily = {}
+        for entry in self.schedule:
+            key = (entry.course_code, entry.time_slot.day)
+            if key not in course_daily:
+                course_daily[key] = []
+            course_daily[key].append(entry)
+        
+        for (course_code, day), entries in course_daily.items():
+            if len(entries) > 2:  # Allow up to 2 sessions per course per day (theory + lab for same group)
+                course_name = next((c.name for c in self.courses if c.code == course_code), course_code)
+                warnings.append(f"{course_name} has {len(entries)} sessions on {day} (should be spread across days)")
         
         # Check for overlaps
         for i, entry1 in enumerate(self.schedule):

@@ -46,6 +46,16 @@ const Dashboard: React.FC = () => {
 
         let statsData: DashboardStat[] = [];
 
+        // Helper function to safely fetch data with fallback
+        const safelyFetch = async <T,>(fn: () => Promise<T>, fallback: T): Promise<T> => {
+          try {
+            return await fn();
+          } catch (err) {
+            console.warn('Failed to fetch, using fallback:', err);
+            return fallback;
+          }
+        };
+
         // Check user role
         if (user?.role === 'faculty') {
           // Fetch faculty-specific dashboard
@@ -84,14 +94,12 @@ const Dashboard: React.FC = () => {
             ];
           } catch (err) {
             console.error('Error fetching faculty dashboard:', err);
-            // Fallback to general data
-            const [programs, courses, faculty, rooms, timetables] = await Promise.all([
-              timetableService.getPrograms(),
-              timetableService.getCourses(),
-              timetableService.getFaculty(),
-              timetableService.getRooms(),
-              timetableService.getAllTimetables(),
-            ]);
+            // Fallback to general data with error handling
+            const programs = await safelyFetch(() => timetableService.getPrograms(), []);
+            const courses = await safelyFetch(() => timetableService.getCourses(), []);
+            const faculty = await safelyFetch(() => timetableService.getFaculty(), []);
+            const rooms = await safelyFetch(() => timetableService.getRooms(), []);
+            const timetables = await safelyFetch(() => timetableService.getAllTimetables(), []);
 
             statsData = [
               {
@@ -132,11 +140,9 @@ const Dashboard: React.FC = () => {
             ];
           }
         } else if (user?.role === 'student') {
-          // Fetch student-specific data
-          const [timetables, courses] = await Promise.all([
-            timetableService.getAllTimetables(),
-            timetableService.getCourses(),
-          ]);
+          // Fetch student-specific data with error handling
+          const timetables = await safelyFetch(() => timetableService.getAllTimetables(), []);
+          const courses = await safelyFetch(() => timetableService.getCourses(), []);
 
           statsData = [
             {
@@ -162,14 +168,12 @@ const Dashboard: React.FC = () => {
             },
           ];
         } else {
-          // Admin/Default view
-          const [programs, courses, faculty, rooms, timetables] = await Promise.all([
-            timetableService.getPrograms(),
-            timetableService.getCourses(),
-            timetableService.getFaculty(),
-            timetableService.getRooms(),
-            timetableService.getAllTimetables(),
-          ]);
+          // Admin/Default view with error handling
+          const programs = await safelyFetch(() => timetableService.getPrograms(), []);
+          const courses = await safelyFetch(() => timetableService.getCourses(), []);
+          const faculty = await safelyFetch(() => timetableService.getFaculty(), []);
+          const rooms = await safelyFetch(() => timetableService.getRooms(), []);
+          const timetables = await safelyFetch(() => timetableService.getAllTimetables(), []);
 
           statsData = [
             {

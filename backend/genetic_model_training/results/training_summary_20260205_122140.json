@@ -1,0 +1,8 @@
+{
+  "timestamp": "2026-02-05T12:21:40.406162",
+  "generations": 100,
+  "population_size": 50,
+  "best_fitness": 98.26415094339626,
+  "model_file": "D:\\NEP-Timetable-AI-master\\backend\\genetic_model_training\\models\\genetic_model_20260205_122140.json",
+  "report_file": "D:\\NEP-Timetable-AI-master\\backend\\genetic_model_training\\results\\training_report_20260205_122140.md"
+}

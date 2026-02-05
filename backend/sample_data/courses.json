@@ -1,5 +1,0 @@
-[
-  { "id": "c1", "code": "CS101", "name": "Intro to Computer Science", "hours_per_week": 3, "course_type": "theory", "faculty_id": "f1" },
-  { "id": "c2", "code": "CS102", "name": "Programming Lab", "hours_per_week": 2, "course_type": "lab", "faculty_id": "f1" },
-  { "id": "c3", "code": "MA101", "name": "Calculus I", "hours_per_week": 3, "course_type": "theory", "faculty_id": "f2" }
-]
